@@ -48,6 +48,9 @@ export async function buildServer(): Promise<{ app: FastifyInstance; ctx: Module
     },
     bodyLimit: (config.uploadMaxMb + 15) * 1024 * 1024,
     trustProxy: true,
+    // Standard sind 100 Zeichen – IDs verbundener Dienste (z. B. Teams-1:1-Chats, Base64 kodiert) sind länger.
+    // Längere Parameter würden sonst an keiner API-Route hängen bleiben und im SPA-Fallback landen.
+    routerOptions: { maxParamLength: 2048 },
   });
 
   await app.register(cookie, { secret: config.appSecret });
@@ -184,6 +187,10 @@ export async function buildServer(): Promise<{ app: FastifyInstance; ctx: Module
   if (fs.existsSync(indexHtml)) {
     await app.register(fastifyStatic, { root: config.webDist, wildcard: false, index: false, maxAge: '1h' });
     app.get('/*', { config: { public: true } }, async (req, reply) => {
+      // Unbekannte API-Adressen nie mit der Web-Oberfläche beantworten (der Client erwartet JSON)
+      if (req.url === '/api' || req.url.startsWith('/api/') || req.url.startsWith('/api?')) {
+        return reply.status(404).send({ error: 'not_found', message: `Route ${req.method} ${req.url.split('?')[0]} nicht gefunden` });
+      }
       const rel = decodeURIComponent((req.params as { '*': string })['*'] ?? '');
       const file = path.join(config.webDist, rel);
       if (rel && file.startsWith(config.webDist) && fs.existsSync(file) && fs.statSync(file).isFile()) {
