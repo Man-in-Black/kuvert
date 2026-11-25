@@ -35,6 +35,18 @@ export const chatKeys = {
 export type PageCursor = { seq: number; id: string } | undefined;
 export type MessagesData = InfiniteData<ChatMessagePage, PageCursor>;
 
+/** Brauchbare Nachricht (schützt die Ansicht vor Lücken oder fremden Objekten im Cache) */
+export const isMessage = (m: unknown): m is ChatMessage =>
+  !!m && typeof m === 'object' && typeof (m as ChatMessage).id === 'string' && typeof (m as ChatMessage).conversationId === 'string';
+
+/** Kurzbeschreibung einer unerwarteten Antwort für Fehlermeldungen */
+function describe(v: unknown): string {
+  if (v === undefined || v === null) return 'leer';
+  if (typeof v === 'string') return `Text „${v.slice(0, 60)}“`;
+  if (Array.isArray(v)) return `Liste mit ${v.length} Einträgen`;
+  return `Objekt mit ${Object.keys(v).slice(0, 5).join(', ') || 'keinen Feldern'}`;
+}
+
 /** Kuvert-Chat: alles erlaubt; verbundene Dienste melden ihre Möglichkeiten selbst */
 export const FULL_CAPS: ChatCapabilities = { edit: true, delete: true, react: true, reply: true, files: true, typing: true, readReceipts: true, manage: true };
 export const capsOf = (c: ChatConversation): ChatCapabilities => c.capabilities ?? FULL_CAPS;
@@ -104,14 +116,24 @@ export function useUnreadTotal(): number {
 export function useMessages(conversationId: string) {
   return useInfiniteQuery({
     queryKey: chatKeys.messages(conversationId),
-    queryFn: ({ pageParam, signal }) =>
-      api<ChatMessagePage>(`/chat/conversations/${conversationId}/messages`, {
+    queryFn: async ({ pageParam, signal }) => {
+      const page = await api<ChatMessagePage>(`/chat/conversations/${conversationId}/messages`, {
         query: { before: pageParam?.seq, beforeId: isExternal(conversationId) ? pageParam?.id : undefined },
         signal,
-      }),
+      });
+      // Unerwartete Antwort (kein { items: [...] }) als Fehler anzeigen statt die Ansicht abstürzen zu lassen
+      if (!page || !Array.isArray(page.items)) {
+        console.error('[Kuvert] Ungültige Antwort beim Laden der Nachrichten', conversationId, page);
+        throw new Error(`Nachrichten konnten nicht geladen werden (ungültige Antwort vom Server: ${describe(page)})`);
+      }
+      return { ...page, items: page.items.filter(isMessage) };
+    },
     initialPageParam: undefined as PageCursor,
     // Seiten: [neueste, ältere, noch ältere …]; jede Seite aufsteigend sortiert
-    getNextPageParam: (last): PageCursor => (last.hasMore && last.items.length ? { seq: last.items[0]!.seq, id: last.items[0]!.id } : undefined),
+    getNextPageParam: (last): PageCursor => {
+      const first = last?.items?.[0];
+      return last?.hasMore && first ? { seq: first.seq, id: first.id } : undefined;
+    },
     staleTime: 5 * 60_000,
   });
 }
@@ -166,21 +188,23 @@ export const chatApi = {
 /* ───────────────────────────── Cache-Pflege ───────────────────────────── */
 
 /** Nachricht einfügen oder ersetzen (dedupliziert über die ID – Antwort und SSE kommen beide an) */
-export function upsertMessage(qc: QueryClient, m: ChatMessage) {
+export function upsertMessage(qc: QueryClient, m: ChatMessage | null | undefined) {
+  if (!isMessage(m)) return;
   qc.setQueryData<MessagesData>(chatKeys.messages(m.conversationId), (data) => {
-    if (!data?.pages.length) return data;
+    if (!data?.pages?.length) return data;
     let found = false;
     const pages = data.pages.map((p) => {
-      const idx = p.items.findIndex((x) => x.id === m.id);
+      const list = p?.items ?? [];
+      const idx = list.findIndex((x) => x?.id === m.id);
       if (idx === -1) return p;
       found = true;
-      const items = p.items.slice();
+      const items = list.slice();
       items[idx] = m;
       return { ...p, items };
     });
     if (found) return { ...data, pages };
     const newest = pages[0]!;
-    const items = [...newest.items, m].sort((a, b) => a.seq - b.seq);
+    const items = [...(newest?.items ?? []), m].sort((a, b) => a.seq - b.seq);
     return { ...data, pages: [{ ...newest, items }, ...pages.slice(1)] };
   });
 }
@@ -247,7 +271,7 @@ export function userName(id: string | null | undefined, users: Map<string, ChatU
 export function withSenders(users: Map<string, ChatUser>, messages: ChatMessage[]): Map<string, ChatUser> {
   let map: Map<string, ChatUser> | null = null;
   for (const m of messages) {
-    if (!m.senderId || !m.senderName || users.has(m.senderId) || map?.has(m.senderId)) continue;
+    if (!m?.senderId || !m.senderName || users.has(m.senderId) || map?.has(m.senderId)) continue;
     map ??= new Map(users);
     map.set(m.senderId, { id: m.senderId, name: m.senderName, email: '', avatarUrl: `/api/chat/ext/avatar/${m.senderId}`, online: false });
   }

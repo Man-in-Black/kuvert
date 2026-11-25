@@ -20,6 +20,7 @@ import {
   patchConversations,
   typingStore,
   upsertMessage,
+  isMessage,
   useChatSettings,
   useConversations,
   useMe,
@@ -51,6 +52,7 @@ export function ChatService() {
 
   useServerEvent('chat.message', (e) => {
     const m = e.message;
+    if (!isMessage(m)) return;
     upsertMessage(qc, m);
     if (m.senderId) typingStore.stop(e.conversationId, m.senderId);
     const viewing = activeChat.id === e.conversationId && !document.hidden;

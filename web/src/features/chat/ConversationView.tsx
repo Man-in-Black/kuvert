@@ -13,6 +13,7 @@ import {
   chatApi,
   chatKeys,
   conversationTitle,
+  isMessage,
   otherMember,
   replaceConversation,
   userName,
@@ -61,7 +62,10 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
   const initialRead = useRef<number | null>(null);
   if (initialRead.current === null && myMember) initialRead.current = myMember.lastReadSeq;
 
-  const messages = useMemo(() => (q.data ? q.data.pages.slice().reverse().flatMap((p) => p.items) : []), [q.data]);
+  const messages = useMemo(
+    () => (q.data ? q.data.pages.slice().reverse().flatMap((p) => (Array.isArray(p?.items) ? p.items : [])).filter(isMessage) : []),
+    [q.data],
+  );
   // Verbundene Dienste: Absender, die nicht in der Teilnehmerliste stehen, über ihren Namen aus der Nachricht ergänzen
   const users = useMemo(() => (c.source ? withSenders(baseUsers, messages) : baseUsers), [c.source, baseUsers, messages]);
   const oldestSeq = messages[0]?.seq ?? 0;
@@ -192,7 +196,7 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
     async (match: (m: ChatMessage) => boolean) => {
       for (let i = 0; i < 40; i++) {
         const data = qc.getQueryData<MessagesData>(chatKeys.messages(c.id));
-        const found = data?.pages.flatMap((p) => p.items).find(match);
+        const found = data?.pages.flatMap((p) => p?.items ?? []).find((m) => isMessage(m) && match(m));
         if (found) {
           // Gescrollt wird erst, wenn React die (evtl. gerade nachgeladene) Nachricht gerendert hat
           setHighlight(found.id);
