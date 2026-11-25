@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDownUp, BellOff, ChevronDown, MessageSquarePlus, MessagesSquare, Phone, Search, Star, Users, UserRound } from 'lucide-react';
 import type { ChatCategory, ChatConversation, ChatUser } from '@kuvert/shared';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Button, Dropdown, EmptyState, IconButton, Input, Spinner } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { cn, formatListDate } from '@/lib/utils';
@@ -61,14 +62,15 @@ export default function ChatPage() {
   );
 
   const detail = conversation ? (
-    <ConversationView
-      key={conversation.id}
-      conversation={conversation}
-      onBack={isMobile ? () => navigate('/chat') : undefined}
-      jumpSeq={jumpSeq}
-      onJumpDone={() => setSearchParams({}, { replace: true })}
-    />
-  ) : id && (single.isLoading || isLoading) ? (
+    <ErrorBoundary key={conversation.id} label="Unterhaltung">
+      <ConversationView
+        conversation={conversation}
+        onBack={isMobile ? () => navigate('/chat') : undefined}
+        jumpSeq={jumpSeq}
+        onJumpDone={() => setSearchParams({}, { replace: true })}
+      />
+    </ErrorBoundary>
+  ) :id && (single.isLoading || isLoading) ? (
     <div className="flex h-full items-center justify-center">
       <Spinner />
     </div>
