@@ -1,0 +1,269 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design-Tokens: alle Farben laufen über CSS-Variablen, damit Hell/Dunkel
+ * (und künftige Themes) zentral umgeschaltet werden können.
+ * Verwendung in Tailwind: bg-bg, bg-surface, bg-surface-2, bg-hover, border-border,
+ * text-fg, text-muted, bg-primary, text-primary-fg, bg-primary-soft, text-danger …
+ */
+@theme {
+  --color-bg: var(--k-bg);
+  --color-surface: var(--k-surface);
+  --color-surface-2: var(--k-surface-2);
+  --color-surface-3: var(--k-surface-3);
+  --color-hover: var(--k-hover);
+  --color-border: var(--k-border);
+  --color-border-strong: var(--k-border-strong);
+  --color-input: var(--k-input);
+  --color-input-border: var(--k-input-border);
+  --color-fg: var(--k-fg);
+  --color-muted: var(--k-muted);
+  --color-subtle: var(--k-subtle);
+  --color-primary: var(--k-primary);
+  --color-primary-hover: var(--k-primary-hover);
+  --color-primary-fg: var(--k-primary-fg);
+  --color-primary-soft: var(--k-primary-soft);
+  --color-sidebar: var(--k-sidebar);
+  --color-danger: var(--k-danger);
+  --color-success: var(--k-success);
+  --color-warning: var(--k-warning);
+  --color-info: var(--k-info);
+
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+
+  --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 12px -2px rgb(15 23 42 / 0.06);
+  --shadow-pop: 0 10px 30px -8px rgb(15 23 42 / 0.22), 0 4px 10px -4px rgb(15 23 42 / 0.1);
+  --shadow-glow: 0 0 0 4px var(--k-ring);
+
+  --animate-fade-in: fade-in 160ms ease-out both;
+  --animate-scale-in: scale-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-slide-up: slide-up 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-slide-in-right: slide-in-right 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(24px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+}
+
+:root {
+  --k-bg: #f4f5f9;
+  --k-surface: #ffffff;
+  --k-surface-2: #f3f4f8;
+  --k-surface-3: #eceef4;
+  --k-hover: #eef0f6;
+  --k-border: #e3e6ee;
+  --k-border-strong: #cfd4df;
+  --k-input: #ffffff;
+  --k-input-border: #d8dce6;
+  --k-fg: #0f1729;
+  --k-muted: #5f6b80;
+  --k-subtle: #8b94a7;
+  --k-primary: #4f46e5;
+  --k-primary-hover: #4338ca;
+  --k-primary-fg: #ffffff;
+  --k-primary-soft: #eef0ff;
+  --k-sidebar: #fbfbfd;
+  --k-ring: rgb(79 70 229 / 0.18);
+  --k-danger: #dc2626;
+  --k-success: #15a34a;
+  --k-warning: #d97706;
+  --k-info: #0284c7;
+  color-scheme: light;
+}
+
+.dark {
+  --k-bg: #0d0f14;
+  --k-surface: #14171e;
+  --k-surface-2: #1a1e27;
+  --k-surface-3: #212633;
+  --k-hover: #222734;
+  --k-border: #272c39;
+  --k-border-strong: #353b4b;
+  /* Eingabefelder heben sich im Dunkelmodus als vertiefte Fläche von Karten ab */
+  --k-input: #0f1218;
+  --k-input-border: #3a4152;
+  --k-fg: #e7e9ef;
+  --k-muted: #9aa2b4;
+  --k-subtle: #6f7889;
+  --k-primary: #7c83ff;
+  --k-primary-hover: #959bff;
+  --k-primary-fg: #ffffff;
+  --k-primary-soft: #232650;
+  --k-sidebar: #11141a;
+  --k-ring: rgb(124 131 255 / 0.28);
+  --k-danger: #f26363;
+  --k-success: #3ccf7b;
+  --k-warning: #f2a93b;
+  --k-info: #38bdf8;
+  color-scheme: dark;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+    font-size: 14px;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+    text-rendering: optimizeLegibility;
+  }
+
+  .density-compact {
+    font-size: 13px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--k-primary) 22%, transparent);
+  }
+
+  /* Native Aufklapplisten: Optionen erben sonst die Schriftfarbe des <select>,
+     die Liste selbst zeichnet der Browser aber (bei transparentem Feld) hell –
+     im Dunkelmodus wird der Text dann unlesbar. Farben daher explizit setzen. */
+  select option,
+  select optgroup {
+    background-color: var(--k-surface);
+    color: var(--k-fg);
+  }
+  select option:disabled {
+    color: var(--k-subtle);
+  }
+
+  /* dezente Scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--k-border-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--k-border);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--k-border-strong);
+  }
+
+  /* Fokus-Ring einheitlich */
+  :focus-visible {
+    outline: 2px solid var(--k-primary);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
+
+@layer components {
+  /* Auswahlfelder mit eigenem Pfeil */
+  .k-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6b80' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    background-size: 1rem;
+  }
+  .dark .k-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa2b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+
+  /* Sanfte Übergänge beim Wechsel Hell/Dunkel */
+  .theme-transition,
+  .theme-transition * {
+    transition:
+      background-color 200ms ease,
+      border-color 200ms ease,
+      color 200ms ease !important;
+  }
+
+  /* Hintergrund-Verlauf für Anmeldeseiten */
+  .auth-backdrop {
+    background:
+      radial-gradient(1200px 600px at 10% -10%, color-mix(in srgb, var(--k-primary) 18%, transparent), transparent 60%),
+      radial-gradient(900px 500px at 110% 110%, color-mix(in srgb, #06b6d4 14%, transparent), transparent 60%),
+      var(--k-bg);
+  }
+
+  .brand-gradient {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 45%, #0ea5e9 100%);
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--k-surface-2) 25%, var(--k-hover) 37%, var(--k-surface-2) 63%);
+    background-size: 400% 100%;
+    animation: var(--animate-shimmer);
+  }
+
+  /* KI-Triage arbeitet gerade (Etikett/Banner) */
+  .triage-working {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--k-primary) 6%, transparent) 25%,
+      color-mix(in srgb, var(--k-primary) 22%, transparent) 50%,
+      color-mix(in srgb, var(--k-primary) 6%, transparent) 75%
+    );
+    background-size: 400% 100%;
+    animation: var(--animate-shimmer);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

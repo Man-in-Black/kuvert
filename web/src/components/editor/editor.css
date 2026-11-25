@@ -1,0 +1,108 @@
+/* Inhaltsstile des Mail-Editors (bewusst nah an der späteren Mail-Darstellung) */
+.kuvert-editor .ProseMirror {
+  outline: none;
+  line-height: 1.5;
+  word-wrap: break-word;
+  padding: 12px 16px;
+}
+.kuvert-editor .ProseMirror > * + * {
+  margin-top: 0.5em;
+}
+.kuvert-editor .ProseMirror p {
+  margin: 0;
+}
+.kuvert-editor .ProseMirror h1 {
+  font-size: 1.6em;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.kuvert-editor .ProseMirror h2 {
+  font-size: 1.3em;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.kuvert-editor .ProseMirror h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+}
+.kuvert-editor .ProseMirror ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.kuvert-editor .ProseMirror ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.kuvert-editor .ProseMirror blockquote {
+  border-left: 3px solid var(--k-border);
+  padding-left: 0.9em;
+  color: var(--k-muted);
+}
+.kuvert-editor .ProseMirror a {
+  color: var(--k-primary);
+  text-decoration: underline;
+}
+.kuvert-editor .ProseMirror code {
+  font-family: var(--font-mono);
+  background: var(--k-surface-2);
+  border-radius: 4px;
+  padding: 0 0.25em;
+  font-size: 0.92em;
+}
+.kuvert-editor .ProseMirror pre {
+  font-family: var(--font-mono);
+  background: var(--k-surface-2);
+  border-radius: 6px;
+  padding: 0.6em 0.8em;
+  white-space: pre-wrap;
+}
+.kuvert-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--k-border);
+  margin: 1em 0;
+}
+.kuvert-editor .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  display: inline-block;
+}
+.kuvert-editor .ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--k-primary);
+}
+.kuvert-editor .ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0.5em 0;
+}
+.kuvert-editor .ProseMirror td,
+.kuvert-editor .ProseMirror th {
+  border: 1px solid var(--k-border);
+  padding: 4px 8px;
+  vertical-align: top;
+  min-width: 2em;
+}
+.kuvert-editor .ProseMirror th {
+  background: var(--k-surface-2);
+  font-weight: 600;
+}
+.kuvert-editor .ProseMirror .selectedCell {
+  background: var(--k-primary-soft);
+}
+.kuvert-editor .ProseMirror div[data-signature] {
+  border-top: 1px dashed var(--k-border);
+  margin-top: 1em;
+  padding-top: 0.5em;
+  color: inherit;
+}
+.kuvert-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--k-muted);
+  pointer-events: none;
+  height: 0;
+}
+.kuvert-editor .ProseMirror mark {
+  border-radius: 2px;
+  padding: 0 1px;
+}

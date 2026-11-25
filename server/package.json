@@ -1,0 +1,47 @@
+{
+  "name": "@kuvert/server",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "update-smime-roots": "node scripts/update-smime-roots.mjs"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/multipart": "^10.1.9",
+    "@fastify/rate-limit": "^11.3.0",
+    "@fastify/static": "^10.1.12",
+    "@fastify/swagger": "^9.9.5",
+    "@fastify/swagger-ui": "^6.1.5",
+    "@kuvert/shared": "0.9.0",
+    "better-sqlite3": "^13.2.0",
+    "fastify": "^5.12.8",
+    "html-to-text": "^10.0.1",
+    "ical.js": "^2.2.1",
+    "imapflow": "^2.12.2",
+    "mailparser": "^3.15.0",
+    "nodemailer": "^10.6.1",
+    "qrcode": "^1.5.4",
+    "tsdav": "^2.5.1",
+    "web-push": "^4.0.0",
+    "webdav": "^5.11.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/html-to-text": "^9.0.4",
+    "@types/mailparser": "^3.9.0",
+    "@types/node": "^24.0.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/web-push": "^3.6.4",
+    "pino-pretty": "^13.2.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3"
+  }
+}

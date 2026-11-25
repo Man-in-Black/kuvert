@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ES2023"],
+    "baseUrl": ".",
+    "paths": { "@kuvert/shared": ["../shared/src/index.ts"] }
+  },
+  "include": ["src", "../shared/src"]
+}
