@@ -107,6 +107,8 @@ export interface ChatSource {
   context?: string | null;
   /** Unterhaltung im Original öffnen */
   webUrl?: string | null;
+  /** Anruf im Dienst starten (fehlt = webUrl), z. B. Teams-Anruf-Link */
+  callUrl?: string | null;
 }
 
 /** Was in einer Unterhaltung möglich ist (Kuvert-Chat: alles) */

@@ -46,6 +46,8 @@ interface GChat {
   lastUpdatedDateTime?: string | null;
   chatType: 'oneOnOne' | 'group' | 'meeting' | string;
   webUrl?: string | null;
+  /** Nur Besprechungschats */
+  onlineMeetingInfo?: { joinWebUrl?: string | null } | null;
   viewpoint?: { isHidden?: boolean; lastMessageReadDateTime?: string | null } | null;
   members?: GMember[];
   lastMessagePreview?: GPreview | null;
@@ -96,7 +98,7 @@ const HOT_POLL = 4_000;
 const HOT_MS = 5 * 60_000;
 const MAX_CHATS = 100;
 
-const CAPS: ChatCapabilities = { edit: true, delete: true, react: true, reply: true, files: false, typing: false, readReceipts: false, manage: false };
+const CAPS: ChatCapabilities = { edit: true, delete: true, react: true, reply: true, files: false, typing: false, readReceipts: false, manage: false, calls: true };
 
 /** Ältere Teams-Reaktionen tragen Namen statt Emojis */
 const LEGACY_REACTIONS: Record<string, string> = { like: '👍', heart: '❤️', laugh: '😆', surprised: '😮', sad: '😢', angry: '😡' };
@@ -502,6 +504,18 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
     return names.length > 4 ? `${names.slice(0, 4).join(', ')} +${names.length - 4}` : names.join(', ');
   }
 
+  /**
+   * Anruf starten: Besprechungschats treten der Besprechung bei, sonst ruft der Teams-Deep-Link
+   * die anderen Mitglieder an (öffnet die Teams-App bzw. Teams im Browser). Ohne E-Mail-Adressen
+   * bleibt nur der Chat selbst.
+   */
+  private callUrl(c: GChat, others: GMember[]): string | null {
+    if (c.chatType === 'meeting') return c.onlineMeetingInfo?.joinWebUrl || c.webUrl || null;
+    const emails = others.map((m) => m.email?.trim()).filter((e): e is string => !!e && e.includes('@'));
+    if (!emails.length || emails.length !== others.length) return c.webUrl ?? null;
+    return `https://teams.microsoft.com/l/call/0/0?users=${emails.slice(0, 20).map(encodeURIComponent).join(',')}`;
+  }
+
   private lastRead(c: GChat): number {
     return Date.parse(c.viewpoint?.lastMessageReadDateTime ?? '') || 0;
   }
@@ -543,7 +557,7 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
       muted: false,
       pinned: false,
       myRole: members[0]!.role,
-      source: this.source(c.chatType === 'meeting' ? 'Besprechung' : null, c.webUrl ?? null),
+      source: this.source(c.chatType === 'meeting' ? 'Besprechung' : null, c.webUrl ?? null, this.callUrl(c, others)),
       capabilities: CAPS,
       memberCount: (c.members ?? []).length || null,
       participants,

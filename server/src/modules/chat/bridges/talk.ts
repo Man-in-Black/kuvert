@@ -329,7 +329,8 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
       pinned: false,
       myRole: members[0]!.role,
       source: this.source(null, `${this.base}/index.php/call/${r.token}`),
-      capabilities: this.caps(direct),
+      // Anrufe laufen in Talk selbst; Änderungsprotokoll (4) und Notizen an mich (6) kennen keine Anrufe
+      capabilities: { ...this.caps(direct), calls: r.type !== 4 && r.type !== 6 },
       memberCount: direct ? 2 : null,
       participants,
     };

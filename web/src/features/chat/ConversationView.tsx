@@ -16,6 +16,7 @@ import {
   isMessage,
   otherMember,
   replaceConversation,
+  sourceShort,
   userName,
   upsertMessage,
   useMe,
@@ -319,7 +320,7 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
 
   const canModerate = c.kind === 'group' && c.myRole === 'owner';
   // Anrufe laufen im Dienst selbst: Beitreten/Starten öffnet die Unterhaltung dort
-  const callUrl = c.call?.joinUrl ?? c.source?.webUrl ?? null;
+  const callUrl = c.call?.joinUrl ?? c.source?.callUrl ?? c.source?.webUrl ?? null;
 
   return (
     <div
@@ -356,7 +357,7 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
         </button>
         {caps.calls && callUrl && (
           <IconButton
-            label={c.call ? 'Anruf beitreten' : `Anruf in ${c.source?.label ?? 'Mattermost'} starten`}
+            label={c.call ? 'Anruf beitreten' : `Anruf in ${c.source ? sourceShort(c.source.type) : 'Mattermost'} starten`}
             onClick={() => window.open(callUrl, '_blank', 'noopener,noreferrer')}
             className={cn(c.call && 'text-success hover:text-success')}
           >

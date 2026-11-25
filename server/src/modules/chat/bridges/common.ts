@@ -290,8 +290,8 @@ export abstract class BridgeBase {
     return `/api/chat/ext/avatar/${extId(this.conn.id, remote)}`;
   }
 
-  source(context?: string | null, webUrl?: string | null) {
-    return { connectionId: this.conn.id, type: this.conn.type, label: this.conn.label, context: context ?? null, webUrl: webUrl ?? null };
+  source(context?: string | null, webUrl?: string | null, callUrl?: string | null) {
+    return { connectionId: this.conn.id, type: this.conn.type, label: this.conn.label, context: context ?? null, webUrl: webUrl ?? null, callUrl: callUrl ?? null };
   }
 }
 
