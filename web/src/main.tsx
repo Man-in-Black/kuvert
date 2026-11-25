@@ -3,7 +3,11 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { registerServiceWorker } from './features/notifications/push';
+import { captureMailtoLaunch } from './features/mail/mailto';
 import './styles.css';
+
+// Aufruf als Programm für E-Mail-Links (/mail?mailto=…): vor dem Router übernehmen
+captureMailtoLaunch();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

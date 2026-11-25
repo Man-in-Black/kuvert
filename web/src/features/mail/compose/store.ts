@@ -66,9 +66,10 @@ const smallScreen = () => typeof window !== 'undefined' && window.matchMedia('(m
 /**
  * Öffnet ein Verfassen-Fenster – je nach Einstellung im Hauptfenster oder als
  * eigenes Browserfenster. Liefert den Schlüssel bzw. null beim Popup.
+ * `inline` erzwingt das Hauptfenster (z. B. ohne Benutzeraktion, wo Popups blockiert würden).
  */
-export function openComposer(init: ComposerInit): string | null {
-  if (preferWindow && !isComposeWindow() && !smallScreen()) {
+export function openComposer(init: ComposerInit, opts: { inline?: boolean } = {}): string | null {
+  if (preferWindow && !opts.inline && !isComposeWindow() && !smallScreen()) {
     if (openComposeWindow(init)) return null;
     toast.warning('Eigenes Fenster wurde vom Browser blockiert', {
       description: 'Bitte Popups für Kuvert erlauben. Die Nachricht wird im Hauptfenster geöffnet.',

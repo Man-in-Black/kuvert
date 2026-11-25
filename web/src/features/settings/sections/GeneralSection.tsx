@@ -5,6 +5,7 @@ import type { UserSettings } from '@kuvert/shared';
 import { errorMessage } from '@/lib/api';
 import { useSettings, useUpdateSettings } from '@/lib/queries';
 import { Button, Input, Select, Switch, Tabs } from '@/components/ui';
+import { canRegisterMailtoHandler, registerMailtoHandler } from '@/features/mail/mailto';
 import { Card, SavedIndicator, SectionHeader, SettingRow } from '../ui';
 
 const MARK_READ_HINTS: Record<UserSettings['markReadMode'], string> = {
@@ -47,6 +48,35 @@ function DelayInput({ value, onCommit }: { value: number; onCommit: (v: number) 
       <span>{draft.trim() === '1' ? 'Sekunde' : 'Sekunden'}</span>
       {draft.trim() === '0' && <span className="text-xs">(sofort)</span>}
     </label>
+  );
+}
+
+/** Kuvert im Browser als Programm für mailto:-Links anmelden */
+function MailtoRow() {
+  const supported = canRegisterMailtoHandler();
+  const register = () => {
+    try {
+      registerMailtoHandler();
+      toast.info('Bitte im Browser bestätigen', {
+        description: 'Je nach Browser erscheint dazu ein Hinweis oder Symbol in der Adressleiste.',
+      });
+    } catch (err) {
+      toast.error('Konnte nicht angemeldet werden', { description: errorMessage(err) });
+    }
+  };
+  return (
+    <SettingRow
+      label="E-Mail-Links (mailto:)"
+      hint={
+        supported
+          ? 'Kuvert im Browser als Programm für E-Mail-Links festlegen – Klicks auf mailto:-Links auf anderen Seiten öffnen dann eine neue Nachricht in Kuvert'
+          : 'Dieser Browser unterstützt das Festlegen nicht (oder die Seite läuft ohne HTTPS). Links in Kuvert selbst öffnen trotzdem eine neue Nachricht.'
+      }
+    >
+      <Button className="w-full justify-center" disabled={!supported} onClick={register}>
+        Kuvert verwenden
+      </Button>
+    </SettingRow>
   );
 }
 
@@ -165,6 +195,7 @@ export function GeneralSection() {
             ]}
           />
         </SettingRow>
+        <MailtoRow />
       </Card>
 
       <Card title="Datenschutz" description="Externe Bilder werden häufig zum Nachverfolgen des Öffnens (Tracking-Pixel) verwendet.">

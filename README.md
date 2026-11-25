@@ -36,7 +36,7 @@ Läuft als ein Docker-Container.
 | **Mail-Archiver** | Archiv durchsuchen (Volltext, Zeitraum, Konto, Ordner), Mails lesen, Anhänge/.eml laden, aus dem Archiv weiterleiten oder antworten – per persönlichem API-Schlüssel |
 | **Oberfläche** | Modernes, responsives Design (Desktop, Tablet, Smartphone mit eigener Mobil-Navigation), Hell/Dunkel/System, Befehlspalette (Strg/⌘+K), einklappbare Seitenleiste, installierbar als PWA |
 | **Suche** | Lokaler Volltext-Index (Meilisearch) über alle Konten: Treffer in wenigen Millisekunden, Suche beim Tippen, tippfehlertolerant, Hervorhebung, Suchbefehle (`from:`, `to:`, `has:attachment`, `is:unread`, `in:sent`, `after:`/`before:` …), Mail-Treffer direkt in der Befehlspalette |
-| **Komfort** | Senden rückgängig machen, später senden, Entwürfe automatisch speichern, Tastaturkürzel, Dunkelmodus, PWA, Tracking-Schutz (externe Inhalte blockiert), Vorlagen/Textbausteine, Mehrbenutzer |
+| **Komfort** | Senden rückgängig machen, später senden, Entwürfe automatisch speichern, Tastaturkürzel, Dunkelmodus, PWA, Tracking-Schutz (externe Inhalte blockiert), Vorlagen/Textbausteine, Mehrbenutzer, mailto:-Links öffnen den Kuvert-Editor (auch als Standard-Mailprogramm im Browser festlegbar) |
 
 ---
 

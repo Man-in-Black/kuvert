@@ -1,9 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { canCompose, openCompose } from '../compose-api';
+import { mailtoFromClick } from '../mailto';
 
 /**
  * Isolierte Darstellung von Mail-HTML: sandboxed iframe OHNE Skripte
  * (allow-same-origin nur für die Höhenberechnung, Links öffnen in neuem Tab).
+ * mailto:-Links öffnen stattdessen eine neue Nachricht in Kuvert.
  */
 export function MailFrame({
   srcDoc,
@@ -76,6 +79,20 @@ export function MailFrame({
       imgs.forEach((img) => img.removeEventListener('load', measure));
     };
   }, [loadedDoc, minHeight, maxHeight]);
+
+  // mailto:-Links abfangen und in Kuvert verfassen (statt externes Mailprogramm/leerer Tab)
+  useEffect(() => {
+    const doc = loadedDoc;
+    if (!doc) return;
+    const onClick = (e: MouseEvent) => {
+      const init = canCompose() ? mailtoFromClick(e) : null;
+      if (!init) return;
+      e.preventDefault();
+      openCompose(init);
+    };
+    doc.addEventListener('click', onClick);
+    return () => doc.removeEventListener('click', onClick);
+  }, [loadedDoc]);
 
   return (
     <iframe

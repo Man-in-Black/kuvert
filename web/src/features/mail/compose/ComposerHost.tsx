@@ -11,7 +11,8 @@ import type { SendResult } from '@kuvert/shared';
 import { useServerEvent } from '@/lib/events';
 import { useSettings } from '@/lib/queries';
 import { useIsMobile } from '@/lib/useIsMobile';
-import { onComposeRequest } from '../compose-api';
+import { onComposeRequest, type ComposeInit } from '../compose-api';
+import { mailtoFromClick, onMailtoLaunch, takePendingMailto } from '../mailto';
 import { mailKeys } from '../api';
 import { announceSend, pendingJobs, retryJob } from './send';
 import { openComposer, setComposerMinimized, setComposerPreference, useComposerRect, useComposers, type ComposerAttachment } from './store';
@@ -20,6 +21,18 @@ import { takePendingInit } from './window';
 const Composer = lazy(() => import('./Composer').then((m) => ({ default: m.Composer })));
 
 let k = 0;
+
+function composerFromInit(init: ComposeInit, inline?: boolean) {
+  openComposer(
+    {
+      mode: 'new',
+      accountId: init.accountId,
+      message: { to: init.to ?? [], cc: init.cc ?? [], bcc: init.bcc ?? [], subject: init.subject ?? '', html: init.html ?? '<p></p>' },
+      attachments: (init.attachments ?? []).map<ComposerAttachment>((a) => ({ ...a, key: `ext${Date.now()}-${k++}` })),
+    },
+    { inline },
+  );
+}
 
 export function ComposerHost() {
   const composers = useComposers();
@@ -46,18 +59,28 @@ export function ComposerHost() {
     };
   }, [qc]);
 
-  useEffect(
-    () =>
-      onComposeRequest((init) => {
-        openComposer({
-          mode: 'new',
-          accountId: init.accountId,
-          message: { to: init.to ?? [], cc: init.cc ?? [], bcc: init.bcc ?? [], subject: init.subject ?? '', html: init.html ?? '<p></p>' },
-          attachments: (init.attachments ?? []).map<ComposerAttachment>((a) => ({ ...a, key: `ext${Date.now()}-${k++}` })),
-        });
-      }),
-    [],
-  );
+  useEffect(() => onComposeRequest((init) => composerFromInit(init)), []);
+
+  // mailto:-Links aus dem Browser/Betriebssystem (Protokoll-Handler). Ohne
+  // Benutzeraktion würde ein Popup blockiert – daher immer im Hauptfenster.
+  useEffect(() => {
+    const pending = takePendingMailto();
+    if (pending) composerFromInit(pending, true);
+    onMailtoLaunch((init) => composerFromInit(init, true));
+  }, []);
+
+  // mailto:-Links in der Oberfläche (Chat, KI-Antworten, Kontakte …) in Kuvert verfassen.
+  // Mail-Inhalte im iframe fängt MailFrame selbst ab.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const init = mailtoFromClick(e);
+      if (!init) return;
+      e.preventDefault();
+      composerFromInit(init);
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, []);
 
   useServerEvent('send.status', (e) => {
     const job = pendingJobs.get(e.jobId);
