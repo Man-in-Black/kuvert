@@ -15,10 +15,14 @@ async function xapi<T>(fn: () => Promise<T>): Promise<T> {
       // Antwort von 3CX mitgeben – sonst ist nicht zu erkennen, was genau fehlt
       const up = err.details as { status?: number; detail?: string; path?: string } | undefined;
       const info = up?.status ? ` (3CX: HTTP ${up.status}${up.path ? ` bei ${up.path}` : ''}${up.detail ? ` – ${up.detail}` : ''})` : '';
+      // Berichte (Anrufliste) brauchen die Rolle System-Eigentümer; Telefonbuch und Benutzer gehen schon mit weniger
+      const report = /^\/xapi\/v1\/Report/i.test(up?.path ?? '');
       throw new AppError(
         403,
         'threecx_no_config_api',
-        `Die 3CX-API-Anwendung darf die Konfigurations-API nicht nutzen. In 3CX unter Integrationen → API „3CX Configuration API Access“ aktivieren und eine Rolle mit ausreichenden Rechten wählen (für die Anrufliste: System-Eigentümer).${info}`,
+        (report
+          ? '3CX verweigert der API-Anwendung die Anrufliste. Sie braucht die Rolle System-Eigentümer. Ist die schon eingestellt, greift vermutlich eine Konsolenbeschränkung (IP-Freigabe für die 3CX-Verwaltung) – sie gilt auch für die API: die IP-Adresse des Kuvert-Servers dort freigeben.'
+          : 'Die 3CX-API-Anwendung darf die Konfigurations-API nicht nutzen. In 3CX unter Integrationen → API „3CX Configuration API Access“ aktivieren und eine Rolle mit ausreichenden Rechten wählen. Ist eine Konsolenbeschränkung (IP-Freigabe) aktiv, muss auch die IP-Adresse des Kuvert-Servers freigegeben sein.') + info,
         up,
       );
     }

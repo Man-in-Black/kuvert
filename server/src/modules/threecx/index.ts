@@ -110,7 +110,17 @@ export default defineModule({
       let configApi: ThreeCxTestResult['configApi'];
       try {
         const n = (await client.pbxUsers()).length;
-        configApi = { ok: true, message: `Konfigurations-API erreichbar – ${n} Benutzer sichtbar` };
+        const role = await client.tokenRole();
+        const limited = !!role && !/owner/i.test(role);
+        configApi = {
+          ok: !limited,
+          message:
+            `Konfigurations-API erreichbar – ${n} Benutzer sichtbar` +
+            (role ? `, Rolle laut 3CX: „${role}“` : '') +
+            (limited
+              ? '. Für die Anrufliste braucht es System-Eigentümer („owners“). Ist die Rolle in 3CX so eingestellt, greift vermutlich eine Konsolenbeschränkung: Die IP-Adresse des Kuvert-Servers muss dort freigegeben sein.'
+              : ''),
+        };
       } catch (err) {
         const up = err instanceof AppError ? (err.details as { status?: number } | undefined) : undefined;
         configApi = {

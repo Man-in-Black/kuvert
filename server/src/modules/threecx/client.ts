@@ -170,6 +170,21 @@ export class ThreeCxClient {
     return data.access_token;
   }
 
+  /**
+   * Rolle laut Token (Claim „MaxRole“, z. B. "owners" oder "users"). 3CX setzt hier "users", wenn
+   * z. B. eine Konsolenbeschränkung (IP-Freigabe) greift – dann sind Berichte wie die Anrufliste gesperrt.
+   */
+  async tokenRole(): Promise<string | null> {
+    try {
+      const payload = (await this.token()).split('.')[1];
+      if (!payload) return null;
+      const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { MaxRole?: unknown };
+      return typeof claims.MaxRole === 'string' ? claims.MaxRole : null;
+    } catch {
+      return null;
+    }
+  }
+
   async request(method: Method, path: string, body?: unknown): Promise<Response> {
     const send = async (token: string) => {
       try {

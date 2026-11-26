@@ -123,7 +123,10 @@ Deep-Link: `/phone?number=+4930123456` füllt das Wahlfeld, `/phone?tab=contacts
 Für Status, Anrufliste, Telefonbuch und Kollegen braucht die API-Anwendung zusätzlich
 **„3CX Configuration API Access“**. Die Anrufliste liest den Anrufbericht der Anlage – laut 3CX-Community
 klappt das nur mit der Rolle **System-Eigentümer** (System Owner); mit „System-Administrator“ bleibt sie leer
-oder liefert einen Fehler. Jeder Benutzer sieht nur die Anrufe seiner eigenen Nebenstelle; Benutzer,
+oder liefert einen Fehler. **Konsolenbeschränkungen** (IP-Freigaben für die 3CX-Verwaltung) gelten auch für die API:
+Ist eine aktiv, die IP-Adresse des Kuvert-Servers freigeben – sonst stuft 3CX die Anwendung trotz
+„System-Eigentümer“ als einfachen Benutzer ein, und die Anrufliste meldet HTTP 403. „Verbindung testen“ zeigt die
+Rolle, die 3CX tatsächlich vergibt („owners“ ist richtig). Jeder Benutzer sieht nur die Anrufe seiner eigenen Nebenstelle; Benutzer,
 die in 3CX „im Telefonbuch ausblenden“ haben, erscheinen nicht unter Kollegen. Fehlt die Freigabe,
 zeigen die Reiter einen Hinweis, Wahlfeld und Auflegen funktionieren trotzdem.
 
