@@ -515,10 +515,52 @@ function ColleagueTile({ c, onCall }: { c: ThreeCxColleague; onCall: (n: string)
   );
 }
 
+type ColleagueSort = 'name' | 'extension' | 'status';
+const SORT_KEY = 'kuvert.phone.colleagueSort';
+
+function loadSort(): ColleagueSort {
+  try {
+    const v = localStorage.getItem(SORT_KEY);
+    return v === 'extension' || v === 'status' ? v : 'name';
+  } catch {
+    return 'name';
+  }
+}
+
+/** Reihenfolge für „Status“: erreichbar zuerst, abgemeldet zuletzt */
+const PROFILE_RANK: Record<string, number> = { Available: 0, Away: 2, 'Custom 1': 3, 'Custom 2': 4, 'Out of office': 5 };
+function statusRank(c: ThreeCxColleague): number {
+  if (c.onCall) return 1;
+  if (!c.registered) return 7;
+  return PROFILE_RANK[c.profile ?? ''] ?? 6;
+}
+
+const byName = (a: ThreeCxColleague, b: ThreeCxColleague) => a.name.localeCompare(b.name, 'de');
+const SORTERS: Record<ColleagueSort, (a: ThreeCxColleague, b: ThreeCxColleague) => number> = {
+  name: byName,
+  extension: (a, b) => a.extension.localeCompare(b.extension, 'de', { numeric: true }),
+  status: (a, b) => statusRank(a) - statusRank(b) || byName(a, b),
+};
+
 function ColleagueList({ q, onCall }: { q: string; onCall: (n: string) => Promise<void> }) {
   const { data, error } = useColleagues(true);
+  const [sort, setSortState] = useState<ColleagueSort>(loadSort);
+  const setSort = (v: ColleagueSort) => {
+    setSortState(v);
+    try {
+      localStorage.setItem(SORT_KEY, v);
+    } catch {
+      /* egal */
+    }
+  };
   const needle = q.toLowerCase();
-  const list = (data?.colleagues ?? []).filter((c) => !c.me && (!needle || `${c.name} ${c.extension} ${c.email ?? ''}`.toLowerCase().includes(needle)));
+  const list = useMemo(
+    () =>
+      (data?.colleagues ?? [])
+        .filter((c) => !c.me && (!needle || `${c.name} ${c.extension} ${c.email ?? ''}`.toLowerCase().includes(needle)))
+        .sort(SORTERS[sort]),
+    [data, needle, sort],
+  );
   if (error) return <ErrorCard error={error} />;
   if (!data) return <Skeleton className="h-64 w-full rounded-2xl" />;
   if (!list.length) {
@@ -529,10 +571,25 @@ function ColleagueList({ q, onCall }: { q: string; onCall: (n: string) => Promis
     );
   }
   return (
-    <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
-      {list.map((c) => (
-        <ColleagueTile key={c.extension} c={c} onCall={onCall} />
-      ))}
-    </ul>
+    <>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-xs text-muted">
+          {list.length} {list.length === 1 ? 'Kollege' : 'Kollegen'}
+        </span>
+        <label className="ml-auto flex items-center gap-2 text-xs text-muted">
+          Sortieren nach
+          <Select className="h-8 w-32 text-xs" value={sort} onChange={(e) => setSort(e.target.value as ColleagueSort)}>
+            <option value="name">Name</option>
+            <option value="extension">Nummer</option>
+            <option value="status">Status</option>
+          </Select>
+        </label>
+      </div>
+      <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
+        {list.map((c) => (
+          <ColleagueTile key={c.extension} c={c} onCall={onCall} />
+        ))}
+      </ul>
+    </>
   );
 }
