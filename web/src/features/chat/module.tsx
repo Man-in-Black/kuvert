@@ -7,6 +7,7 @@ import { ChatService } from './ChatService';
 import { ChatSettingsSection } from './ChatSettingsSection';
 
 const ChatPage = lazy(() => import('./ChatPage'));
+const ChatPanel = lazy(() => import('./ChatPanel'));
 
 /** Team-Chat zwischen Kuvert-Benutzern (Server-Modul "chat"). */
 const mod: WebModule = {
@@ -27,6 +28,18 @@ const mod: WebModule = {
           <ChatPage />
         </Suspense>
       ),
+    },
+  ],
+  sidePanels: [
+    {
+      id: 'chat',
+      label: 'Chat',
+      icon: MessagesSquare,
+      order: 30,
+      component: ChatPanel,
+      defaultWidth: 400,
+      keywords: 'chat team nachrichten unterhaltung',
+      useBadge: useUnreadTotal,
     },
   ],
   settings: [{ id: 'chat', label: 'Chat', icon: MessagesSquare, order: 27, component: ChatSettingsSection }],

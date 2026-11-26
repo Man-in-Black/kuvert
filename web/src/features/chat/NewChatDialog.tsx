@@ -11,7 +11,16 @@ import { UserPicker } from './components';
 
 export type NewChatMode = 'direct' | 'group';
 
-export function NewChatDialog({ mode: initialMode, onClose }: { mode: NewChatMode; onClose: () => void }) {
+export function NewChatDialog({
+  mode: initialMode,
+  onClose,
+  onCreated,
+}: {
+  mode: NewChatMode;
+  onClose: () => void;
+  /** Statt zur Chat-Seite zu wechseln (z. B. im Panel der Seitenleiste) */
+  onCreated?: (conversationId: string) => void;
+}) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const me = useMe();
@@ -42,7 +51,8 @@ export function NewChatDialog({ mode: initialMode, onClose }: { mode: NewChatMod
       const conv = await fn();
       replaceConversation(qc, conv);
       onClose();
-      navigate(`/chat/${conv.id}`);
+      if (onCreated) onCreated(conv.id);
+      else navigate(`/chat/${conv.id}`);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {

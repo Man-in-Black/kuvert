@@ -12,6 +12,8 @@ import { Skeleton } from '@/components/ui';
 const SettingsLazy = lazy(() => import('./ThreeCxSettings').then((m) => ({ default: m.ThreeCxSettingsSection })));
 const PhoneLazy = lazy(() => import('./PhonePage').then((m) => ({ default: m.PhonePage })));
 const AdminLazy = lazy(() => import('./ThreeCxSettings').then((m) => ({ default: m.ThreeCxAdminSection })));
+/** Panel der Seitenleiste rechts (bringt Kopf und eigene Ladeanzeige mit) */
+const PhonePanel = lazy(() => import('./PhonePage').then((m) => ({ default: m.PhonePanel })));
 
 const Fallback = () => <Skeleton className="h-40 w-full rounded-2xl" />;
 
@@ -46,12 +48,23 @@ const mod: WebModule = {
   admin: [{ id: 'threecx', label: '3CX', icon: PhoneCall, order: 64, component: ThreeCxAdmin }],
 };
 
-/** Bereich „Telefon“ nur mit aktiver Anbindung */
+/** Bereich „Telefon“ und Panel rechts nur mit aktiver Anbindung */
 export const phoneModule: WebModule = {
   id: 'phone',
   feature: 'threecx',
   nav: [{ path: 'phone', label: 'Telefon', icon: Phone, order: 32 }],
   routes: [{ path: 'phone/*', element: <PhoneRoute /> }],
+  sidePanels: [
+    {
+      id: 'phone',
+      label: 'Telefon',
+      icon: Phone,
+      order: 50,
+      component: PhonePanel,
+      defaultWidth: 360,
+      keywords: 'telefon anrufen 3cx wählen anrufliste kollegen',
+    },
+  ],
 };
 
 export default mod;

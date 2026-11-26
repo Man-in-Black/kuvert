@@ -143,8 +143,9 @@ export default mod;
 | `messageActions` | `MessageExtensionProps` | „Zusammenfassen“ |
 | `messageBanners` | `MessageExtensionProps` | Hinweise über dem Inhalt |
 | `conversationActions` | `ConversationExtensionProps` | Aktionen für eine ganze Unterhaltung (KI-Zusammenfassung, Triage) |
-| `services` | – | unsichtbare Dienste (Benachrichtigungen) bzw. global eingeblendete Panels (KI-Chat) |
-| `actions` | `ShellAction` | globale Aktionen ohne eigene Seite: Seitenleiste, Befehlspalette, mobil im „Mehr“-Menü (z. B. KI-Chat) |
+| `services` | – | unsichtbare Dienste (Benachrichtigungen, Chat-Ereignisse) |
+| `actions` | `ShellAction` | globale Aktionen ohne eigene Seite: Seitenleiste links, Befehlspalette, mobil im „Mehr“-Menü |
+| `sidePanels` | `SidePanelDef` | Panel in der Seitenleiste rechts (Kalender, Kontakte, Chat, KI-Chat, Telefon): eingeklappt ein Symbol, aufgeklappt ein Reiter unten; öffnen per `openSidePanel(id)` aus `layout/side-panel-store.ts`. Befehlspalette und „Mehr“-Menü bekommen automatisch eine Aktion dazu |
 
 `ComposerExtensionProps` bietet Zugriff auf den TipTap-Editor, den Entwurf und
 Hilfsfunktionen (`insertHtml`, `getSelectedText`, `replaceContent` …), siehe

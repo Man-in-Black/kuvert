@@ -4,7 +4,7 @@
  * Zustand in der URL: ?tab=log|contacts|colleagues&q=…&number=… (number füllt das Wahlfeld)
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -12,7 +12,9 @@ import { de } from 'date-fns/locale';
 import {
   BookUser,
   Delete,
+  Grip,
   Mail,
+  Maximize2,
   Phone,
   PhoneCall,
   PhoneIncoming,
@@ -27,6 +29,8 @@ import {
 import type { ThreeCxCallDirection, ThreeCxCallLogEntry, ThreeCxColleague, ThreeCxContact } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
 import { useFeature } from '@/lib/queries';
+import { useIsMobile } from '@/lib/useIsMobile';
+import { closeSidePanel, isSidebarPinned } from '@/layout/side-panel-store';
 import { cn } from '@/lib/utils';
 import { Avatar, Button, Card, EmptyState, IconButton, Input, PageHeader, Select, Skeleton, Tabs } from '@/components/ui';
 import { openCompose } from '@/features/mail/compose-api';
@@ -56,6 +60,41 @@ const profileLabel = (p: string | null | undefined) => (p ? (PROFILE_LABELS[p] ?
 /* ───────────────────────────── Einstieg ───────────────────────────── */
 
 export function PhonePage() {
+  return <PhoneGate>{(extension) => <PhoneView extension={extension} />}</PhoneGate>;
+}
+
+/** Telefon als Panel der Seitenleiste rechts: Gespräch, Wahlfeld, Status und Listen untereinander */
+export function PhonePanel() {
+  const navigate = useNavigate();
+  const mobile = useIsMobile();
+  const { data: me } = useThreeCxMe();
+  const openFull = () => {
+    navigate('/phone');
+    if (mobile || !isSidebarPinned()) closeSidePanel();
+  };
+  return (
+    <>
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-soft text-primary">
+          <Phone className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold leading-tight">Telefon</div>
+          {me?.extension && <div className="truncate text-xs text-muted">Nebenstelle {me.extension}</div>}
+        </div>
+        <IconButton label="Im Telefon öffnen" size="icon-sm" onClick={openFull}>
+          <Maximize2 className="h-4 w-4" />
+        </IconButton>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PhoneGate>{() => <PhoneCompact />}</PhoneGate>
+      </div>
+    </>
+  );
+}
+
+/** Erst prüfen, ob 3CX aktiv ist und der Benutzer eine Nebenstelle hat */
+function PhoneGate({ children }: { children: (extension: string) => ReactNode }) {
   const feature = useFeature('threecx');
   const { data: me, isLoading } = useThreeCxMe();
   if (!feature) return <EmptyState icon={<Phone />} title="3CX nicht eingerichtet">Die Anbindung an die Telefonanlage ist nicht aktiv.</EmptyState>;
@@ -73,7 +112,53 @@ export function PhonePage() {
       </EmptyState>
     );
   }
-  return <PhoneView extension={me.extension} />;
+  return <>{children(me.extension)}</>;
+}
+
+/** Anruf starten und das laufende Gespräch bzw. die Anrufliste gleich auffrischen */
+function usePlaceCall() {
+  const qc = useQueryClient();
+  return async (n: string) => {
+    if (await callViaThreeCx(n)) {
+      setTimeout(() => void qc.invalidateQueries({ queryKey: tk.active }), 800);
+      setTimeout(() => void qc.invalidateQueries({ queryKey: tk.log(14) }), 15_000);
+    }
+  };
+}
+
+function PhoneCompact() {
+  const call = usePlaceCall();
+  const [tab, setTab] = useState<'log' | 'colleagues'>('log');
+  const [input, setInput] = useState('');
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setQ(input.trim()), 300);
+    return () => clearTimeout(t);
+  }, [input]);
+  return (
+    <div className="space-y-3 p-3">
+      <ActiveCallCard />
+      <Dialpad initial="" onCall={call} compact />
+      <MyStatusCard />
+      <div className="flex flex-wrap items-center gap-2">
+        <Tabs<'log' | 'colleagues'>
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'log', label: 'Anrufliste' },
+            { value: 'colleagues', label: 'Kollegen' },
+          ]}
+        />
+        {tab === 'colleagues' && (
+          <div className="relative min-w-[8rem] flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+            <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Kollege suchen …" className="h-8 pl-8" />
+          </div>
+        )}
+      </div>
+      {tab === 'log' ? <CallLogList onCall={call} /> : <ColleagueList q={q} onCall={call} />}
+    </div>
+  );
 }
 
 function useUrlState() {
@@ -95,7 +180,7 @@ function useUrlState() {
 
 function PhoneView({ extension }: { extension: string }) {
   const { tab, q, number, set } = useUrlState();
-  const qc = useQueryClient();
+  const call = usePlaceCall();
   const [input, setInput] = useState(q);
   useEffect(() => setInput(q), [q]);
   useEffect(() => {
@@ -104,14 +189,6 @@ function PhoneView({ extension }: { extension: string }) {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input]);
-
-  /** Anruf starten und das laufende Gespräch gleich anzeigen */
-  const call = async (n: string) => {
-    if (await callViaThreeCx(n)) {
-      setTimeout(() => void qc.invalidateQueries({ queryKey: tk.active }), 800);
-      setTimeout(() => void qc.invalidateQueries({ queryKey: tk.log(14) }), 15_000);
-    }
-  };
 
   return (
     <div className="h-full overflow-y-auto">
@@ -166,9 +243,11 @@ const KEYS: [string, string][] = [
   ['#', ''],
 ];
 
-function Dialpad({ initial, onCall }: { initial: string; onCall: (n: string) => Promise<void> }) {
+/** compact (Panel der Seitenleiste): Tastenfeld erst auf Wunsch, Anrufen neben dem Feld */
+function Dialpad({ initial, onCall, compact }: { initial: string; onCall: (n: string) => Promise<void>; compact?: boolean }) {
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
+  const [keypad, setKeypad] = useState(!compact);
   useEffect(() => {
     if (initial) setValue(initial);
   }, [initial]);
@@ -185,52 +264,66 @@ function Dialpad({ initial, onCall }: { initial: string; onCall: (n: string) => 
   };
 
   return (
-    <Card bodyClassName="p-4">
+    <Card bodyClassName={compact ? 'p-3' : 'p-4'}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
       >
-        <div className="relative">
-          <Input
-            value={value}
-            onChange={(e) => setValue(e.target.value.replace(/[^\d+*#\s()/-]/g, ''))}
-            placeholder="Nummer oder Nebenstelle"
-            inputMode="tel"
-            autoComplete="off"
-            className="h-12 pr-10 text-center font-mono text-lg tracking-wide"
-            aria-label="Rufnummer"
-          />
-          {value && (
-            <IconButton label="Letzte Ziffer löschen" className="absolute right-1.5 top-1/2 -translate-y-1/2" onClick={() => setValue((v) => v.slice(0, -1))}>
-              <Delete className="h-4 w-4" />
-            </IconButton>
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Input
+              value={value}
+              onChange={(e) => setValue(e.target.value.replace(/[^\d+*#\s()/-]/g, ''))}
+              placeholder="Nummer oder Nebenstelle"
+              inputMode="tel"
+              autoComplete="off"
+              className={cn('pr-10 font-mono tracking-wide', compact ? 'h-10 text-base' : 'h-12 text-center text-lg')}
+              aria-label="Rufnummer"
+            />
+            {value && (
+              <IconButton label="Letzte Ziffer löschen" className="absolute right-1.5 top-1/2 -translate-y-1/2" onClick={() => setValue((v) => v.slice(0, -1))}>
+                <Delete className="h-4 w-4" />
+              </IconButton>
+            )}
+          </div>
+          {compact && (
+            <>
+              <IconButton label={keypad ? 'Tastenfeld ausblenden' : 'Tastenfeld einblenden'} onClick={() => setKeypad((k) => !k)} className={cn(keypad && 'bg-primary-soft text-primary')}>
+                <Grip className="h-4 w-4" />
+              </IconButton>
+              <Button type="submit" variant="primary" className="h-10" icon={<PhoneCall className="h-4 w-4" />} loading={busy} disabled={!value.trim()} aria-label="Anrufen" title="Anrufen" />
+            </>
           )}
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {KEYS.map(([k, sub]) => (
-            <button
-              key={k}
-              type="button"
-              className="flex h-12 flex-col items-center justify-center rounded-xl bg-surface-2 transition-colors hover:bg-primary-soft active:scale-[0.97]"
-              onClick={() => setValue((v) => v + k)}
-              onContextMenu={(e) => {
-                // Langes Drücken/Rechtsklick auf 0 ergibt „+“ wie am Telefon
-                if (k === '0') {
-                  e.preventDefault();
-                  setValue((v) => `${v}+`);
-                }
-              }}
-            >
-              <span className="text-lg font-medium leading-none">{k}</span>
-              <span className="mt-0.5 h-3 text-[9px] font-medium tracking-widest text-muted">{sub}</span>
-            </button>
-          ))}
-        </div>
-        <Button type="submit" variant="primary" className="mt-3 h-11 w-full justify-center" icon={<PhoneCall className="h-4 w-4" />} loading={busy} disabled={!value.trim()}>
-          Anrufen
-        </Button>
+        {keypad && (
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {KEYS.map(([k, sub]) => (
+              <button
+                key={k}
+                type="button"
+                className="flex h-12 flex-col items-center justify-center rounded-xl bg-surface-2 transition-colors hover:bg-primary-soft active:scale-[0.97]"
+                onClick={() => setValue((v) => v + k)}
+                onContextMenu={(e) => {
+                  // Langes Drücken/Rechtsklick auf 0 ergibt „+“ wie am Telefon
+                  if (k === '0') {
+                    e.preventDefault();
+                    setValue((v) => `${v}+`);
+                  }
+                }}
+              >
+                <span className="text-lg font-medium leading-none">{k}</span>
+                <span className="mt-0.5 h-3 text-[9px] font-medium tracking-widest text-muted">{sub}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {!compact && (
+          <Button type="submit" variant="primary" className="mt-3 h-11 w-full justify-center" icon={<PhoneCall className="h-4 w-4" />} loading={busy} disabled={!value.trim()}>
+            Anrufen
+          </Button>
+        )}
       </form>
     </Card>
   );

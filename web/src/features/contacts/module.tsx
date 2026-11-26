@@ -4,6 +4,7 @@ import type { WebModule } from '@/modules/types';
 import { Spinner } from '@/components/ui';
 
 const ContactsPage = lazy(() => import('./ContactsPage'));
+const ContactsPanel = lazy(() => import('./ContactsPanel'));
 
 const mod: WebModule = {
   id: 'contacts',
@@ -22,6 +23,17 @@ const mod: WebModule = {
           <ContactsPage />
         </Suspense>
       ),
+    },
+  ],
+  sidePanels: [
+    {
+      id: 'contacts',
+      label: 'Kontakte',
+      icon: Users,
+      order: 20,
+      component: ContactsPanel,
+      defaultWidth: 380,
+      keywords: 'kontakte adressbuch personen telefonnummer',
     },
   ],
 };

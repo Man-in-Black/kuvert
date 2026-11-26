@@ -1,25 +1,24 @@
 /**
- * Kalender als Seitenleiste (wie der KI-Chat): Monatsnavigator und die Termine der
- * nächsten sieben Tage ab dem gewählten Tag. Anpinnbar – dann bleibt Mail daneben bedienbar.
+ * Kalender-Panel der Seitenleiste rechts: Monatsnavigator und die Termine der
+ * nächsten sieben Tage ab dem gewählten Tag. Angepinnt bleibt Mail daneben bedienbar.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { addDays, format, isSameDay, isToday, isTomorrow, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { CalendarDays, ChevronLeft, ChevronRight, Maximize2, MapPin, Plus, Repeat, Video, X } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Maximize2, MapPin, Plus, Repeat, Video } from 'lucide-react';
 import type { CalendarEvent } from '@kuvert/shared';
 import { Button, IconButton, Spinner } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { useAccountMap, useSettings } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/lib/useIsMobile';
-import { PinPanelButton, SidePanel, isPanelPinned } from '@/layout/SidePanel';
+import { closeSidePanel, isSidebarPinned } from '@/layout/side-panel-store';
 import { calKey, calKeyOf, useCalendars, useEvents } from './api';
 import { EventDetails } from './EventDetails';
 import { EventEditor, type EditorInit } from './EventEditor';
 import { MiniMonth } from './MiniMonth';
 import { isRecurring } from './series';
-import { CALENDAR_PANEL_ID, closeCalendarPanel } from './panel-store';
 import { eventColor, meetingLabel, parseEventDate } from './utils';
 import { HIDDEN_KEY, usePersistentSet } from './visibility';
 
@@ -93,7 +92,7 @@ export default function CalendarPanel() {
 
   const openFull = () => {
     navigate('/calendar');
-    if (mobile || !isPanelPinned(CALENDAR_PANEL_ID)) closeCalendarPanel();
+    if (mobile || !isSidebarPinned()) closeSidePanel();
   };
 
   const newEvent = () => {
@@ -104,7 +103,7 @@ export default function CalendarPanel() {
   };
 
   return (
-    <SidePanel id={CALENDAR_PANEL_ID} label="Kalender" defaultWidth={360} onClose={closeCalendarPanel} canClose={!detail && !editor}>
+    <>
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-soft text-primary">
           <CalendarDays className="h-4 w-4" />
@@ -116,10 +115,6 @@ export default function CalendarPanel() {
         </HeaderButton>
         <HeaderButton label="Im Kalender öffnen" onClick={openFull}>
           <Maximize2 className="h-4 w-4" />
-        </HeaderButton>
-        <PinPanelButton id={CALENDAR_PANEL_ID} />
-        <HeaderButton label="Schließen" onClick={closeCalendarPanel}>
-          <X className="h-4 w-4" />
         </HeaderButton>
       </header>
 
@@ -199,7 +194,7 @@ export default function CalendarPanel() {
       {editor && (
         <EventEditor init={editor} calendars={calendars} accountMap={accountMap} defaultCalendarKey={writableDefault} onClose={() => setEditor(null)} />
       )}
-    </SidePanel>
+    </>
   );
 }
 

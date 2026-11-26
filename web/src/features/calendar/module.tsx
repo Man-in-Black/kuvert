@@ -1,22 +1,11 @@
 import { lazy, Suspense } from 'react';
-import { CalendarDays, PanelRight } from 'lucide-react';
+import { CalendarDays } from 'lucide-react';
 import type { WebModule } from '@/modules/types';
 import { Spinner } from '@/components/ui';
-import { toggleCalendarPanel, useCalendarPanelOpen } from './panel-store';
 
 const CalendarPage = lazy(() => import('./CalendarPage'));
+/** Panel der Seitenleiste rechts (erst beim Aufklappen geladen) */
 const CalendarPanel = lazy(() => import('./CalendarPanel'));
-
-/** Kalender als Seitenleiste (nur geladen, solange sie offen ist) */
-function CalendarPanelService() {
-  const open = useCalendarPanelOpen();
-  if (!open) return null;
-  return (
-    <Suspense fallback={null}>
-      <CalendarPanel />
-    </Suspense>
-  );
-}
 
 const mod: WebModule = {
   id: 'calendar',
@@ -37,18 +26,17 @@ const mod: WebModule = {
       ),
     },
   ],
-  actions: [
+  sidePanels: [
     {
-      id: 'calendar-panel',
-      label: 'Kalender-Leiste',
-      icon: PanelRight,
-      order: 20,
-      keywords: 'kalender termine seitenleiste sidebar agenda heute',
-      run: toggleCalendarPanel,
-      useActive: useCalendarPanelOpen,
+      id: 'calendar',
+      label: 'Kalender',
+      icon: CalendarDays,
+      order: 10,
+      component: CalendarPanel,
+      defaultWidth: 360,
+      keywords: 'kalender termine agenda heute',
     },
   ],
-  services: [CalendarPanelService],
 };
 
 export default mod;

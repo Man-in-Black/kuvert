@@ -37,9 +37,9 @@ import { ADDRESS_TYPES, EMAIL_TYPES, PHONE_TYPES, bookKey, deleteContact, typeLa
 import { ContactEditor } from './ContactEditor';
 import { downloadVCard } from './vcard';
 
-const contactKey = (c: Contact) => `${c.accountId}|${c.addressBookId}|${c.id}`;
+export const contactKey = (c: Contact) => `${c.accountId}|${c.addressBookId}|${c.id}`;
 
-function letterOf(name: string): string {
+export function letterOf(name: string): string {
   const ch = name.trim().charAt(0).toLocaleUpperCase('de');
   if (!ch) return '#';
   const base = ch.normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -359,18 +359,19 @@ function DetailRow({ icon, label, children }: { icon: ReactNode; label?: string;
   );
 }
 
-interface Origin {
+export interface Origin {
   name: string;
   color?: string;
 }
 
-function ContactDetail({
+export function ContactDetail({
   contact: c,
   origin,
   book,
   onFilterCompany,
   onEdit,
   onDeleted,
+  compact,
 }: {
   contact: Contact;
   origin?: Origin;
@@ -379,6 +380,8 @@ function ContactDetail({
   onFilterCompany?: () => void;
   onEdit: () => void;
   onDeleted: () => void;
+  /** Schmale Darstellung (Panel der Seitenleiste) */
+  compact?: boolean;
 }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -408,16 +411,16 @@ function ContactDetail({
   })() : null;
 
   return (
-    <div className="mx-auto max-w-2xl p-3 sm:p-6">
-      <div className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
-        <div className="flex items-start gap-4 sm:gap-5">
+    <div className={cn('mx-auto max-w-2xl', compact ? 'p-3' : 'p-3 sm:p-6')}>
+      <div className={cn('rounded-2xl border border-border bg-surface p-4 shadow-sm', !compact && 'sm:p-6')}>
+        <div className={cn('flex items-start', compact ? 'gap-3' : 'gap-4 sm:gap-5')}>
           {c.photoUrl ? (
-            <img src={c.photoUrl} alt="" className="h-20 w-20 rounded-full object-cover" />
+            <img src={c.photoUrl} alt="" className={cn('rounded-full object-cover', compact ? 'h-14 w-14' : 'h-20 w-20')} />
           ) : (
-            <Avatar name={c.displayName} email={primaryEmail} size={80} />
+            <Avatar name={c.displayName} email={primaryEmail} size={compact ? 56 : 80} />
           )}
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-2xl font-semibold">{c.displayName || '(ohne Namen)'}</h1>
+            <h1 className={cn('truncate font-semibold', compact ? 'text-lg' : 'text-2xl')}>{c.displayName || '(ohne Namen)'}</h1>
             {(c.jobTitle || c.company) && (
               <div className="mt-0.5 text-sm text-muted">{[c.jobTitle, [c.company, c.department].filter(Boolean).join(' · ')].filter(Boolean).join(', ')}</div>
             )}

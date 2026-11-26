@@ -8,6 +8,10 @@ import { toast } from 'sonner';
 import type { AiChatContext, AiChatEvent, AiChatRecord, AiChatRequest, AiChatSource, MessageDetail } from '@kuvert/shared';
 import { ApiError, api, apiUrl, errorMessage } from '@/lib/api';
 import type { MessageRef } from '@/features/mail/api';
+import { closeSidePanelIf, openSidePanel } from '@/layout/side-panel-store';
+
+/** ID des KI-Chats in der Seitenleiste rechts */
+export const AI_PANEL_ID = 'ai-chat';
 
 export interface AiChatMessage {
   id: string;
@@ -41,7 +45,6 @@ export interface AiChatSession {
 }
 
 interface State {
-  open: boolean;
   session: AiChatSession;
   /** Gewähltes Modell (leer = Standard aus den Einstellungen) */
   model: string | null;
@@ -70,7 +73,7 @@ const newSession = (target: AiChatTarget | null): AiChatSession => ({
   searchMailbox: !target,
 });
 
-let state: State = { open: false, session: newSession(null), model: null, historyVersion: 0, loading: false };
+let state: State = { session: newSession(null), model: null, historyVersion: 0, loading: false };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<State>) => {
   state = { ...state, ...patch };
@@ -191,12 +194,14 @@ export function openAiChat(target?: AiChatTarget) {
   const same = target ? current.target?.key === target.key : !current.target;
   if (same) {
     // Kontext auffrischen (z. B. neu geladene Nachricht), Verlauf behalten
-    set({ open: true, session: target ? { ...current, target } : current });
+    set({ session: target ? { ...current, target } : current });
+    openSidePanel(AI_PANEL_ID);
     return;
   }
   leaveSession();
   const fresh = newSession(target ?? null);
-  set({ open: true, session: fresh, loading: !!target });
+  set({ session: fresh, loading: !!target });
+  openSidePanel(AI_PANEL_ID);
   if (!target) return;
   api<AiChatRecord | null>('/ai/chats/by-key', { query: { key: target.key } })
     .then((r) => {
@@ -218,7 +223,7 @@ export async function loadAiChat(id: string) {
   set({ loading: true });
   try {
     const r = await api<AiChatRecord>(`/ai/chats/${id}`);
-    set({ open: true, session: fromRecord(r), model: r.model ?? state.model });
+    set({ session: fromRecord(r), model: r.model ?? state.model });
   } catch (err) {
     toast.error(errorMessage(err));
   } finally {
@@ -277,12 +282,7 @@ export async function renameAiChat(id: string, title: string) {
 }
 
 export function closeAiChat() {
-  set({ open: false });
-}
-
-export function toggleAiChat() {
-  if (state.open) closeAiChat();
-  else openAiChat();
+  closeSidePanelIf(AI_PANEL_ID);
 }
 
 /** Neuer Chat (der bisherige bleibt im Verlauf) */

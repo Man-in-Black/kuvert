@@ -1,5 +1,5 @@
 /**
- * KI-Chat als Seitenpanel rechts (nicht modal – Mail und Liste bleiben bedienbar).
+ * KI-Chat als Panel der Seitenleiste rechts (nicht modal – Mail und Liste bleiben bedienbar).
  * Global oder mit einer Mail / einem Verlauf als Kontext; optional durchsucht der
  * Server das Postfach und gibt die gefundenen Mails als Quellen mit.
  */
@@ -15,7 +15,6 @@ import { useSettings } from '@/lib/queries';
 import { cn, displayAddress, formatListDate } from '@/lib/utils';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { Spinner, useConfirm } from '@/components/ui';
-import { PinPanelButton, SidePanel } from '@/layout/SidePanel';
 import { markdownToHtml } from '@/features/chat/markdown';
 import { useMailActions } from '@/features/mail/actions';
 import { fetchMessage } from '@/features/mail/api';
@@ -62,13 +61,7 @@ const SUGGESTIONS: Record<'search' | 'global' | 'message' | 'conversation' | 'me
 const CONTEXT_ICON = { message: Mail, conversation: MessagesSquare, meeting: Mic } as const;
 const CONTEXT_LABEL = { message: 'E-Mail', conversation: 'Unterhaltung', meeting: 'Gespräch' } as const;
 
-export function AiChatService() {
-  const { open } = useAiChat();
-  if (!open) return null;
-  return <AiChatPanel />;
-}
-
-function AiChatPanel() {
+export default function AiChatPanel() {
   const { session, model, loading } = useAiChat();
   const [view, setView] = useState<'chat' | 'history'>('chat');
   const defaults = useAiDefaults();
@@ -122,7 +115,7 @@ function AiChatPanel() {
   };
 
   return (
-    <SidePanel id="ai-chat" label="KI-Chat" defaultWidth={440} onClose={closeAiChat} canClose={!busy}>
+    <>
       {/* Kopf */}
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-soft text-primary">
@@ -160,10 +153,6 @@ function AiChatPanel() {
           disabled={!session.messages.length && view === 'chat'}
         >
           <SquarePen className="h-4 w-4" />
-        </HeaderButton>
-        <PinPanelButton id="ai-chat" />
-        <HeaderButton label="Schließen" onClick={closeAiChat}>
-          <X className="h-4 w-4" />
         </HeaderButton>
       </header>
 
@@ -286,7 +275,7 @@ function AiChatPanel() {
       </div>
         </>
       )}
-    </SidePanel>
+    </>
   );
 }
 

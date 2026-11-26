@@ -6,7 +6,8 @@ import type { UserSettings } from '@kuvert/shared';
 import { api } from '@/lib/api';
 import { qk, useAppInfo, useSettings, useUpdateSettings } from '@/lib/queries';
 import { useModules } from '@/modules/context';
-import type { NavItem, ShellAction } from '@/modules/types';
+import type { NavItem, ShellAction, SidePanelDef } from '@/modules/types';
+import { toggleSidePanel, useSidePanelOpen } from './side-panel-store';
 import type { MenuItem } from '@/components/ui';
 
 export function useLogout() {
@@ -33,10 +34,29 @@ export function useNavItems(): { main: NavItem[]; system: NavItem[] } {
   }, [mods]);
 }
 
-/** Globale Aktionen aller Module (z. B. KI-Chat) */
+/** Panels der Seitenleiste rechts aller Module, sortiert */
+export function useSidePanels(): SidePanelDef[] {
+  const mods = useModules();
+  return useMemo(() => mods.flatMap((m) => m.sidePanels ?? []).sort((a, b) => a.order - b.order), [mods]);
+}
+
+/** Globale Aktionen aller Module (z. B. KI-Chat) – inklusive „Panel öffnen“ für jedes Panel rechts */
 export function useShellActions(): ShellAction[] {
   const mods = useModules();
-  return useMemo(() => mods.flatMap((m) => m.actions ?? []).sort((a, b) => a.order - b.order), [mods]);
+  const panels = useSidePanels();
+  return useMemo(() => {
+    const fromPanels = panels.map<ShellAction>((p) => ({
+      id: `panel-${p.id}`,
+      label: p.actionLabel ?? `${p.label}-Leiste`,
+      icon: p.icon,
+      order: p.order,
+      keywords: `${p.keywords ?? ''} seitenleiste sidebar panel rechts`,
+      run: () => toggleSidePanel(p.id),
+      useActive: () => useSidePanelOpen(p.id),
+      sidePanel: true,
+    }));
+    return [...mods.flatMap((m) => m.actions ?? []), ...fromPanels].sort((a, b) => a.order - b.order);
+  }, [mods, panels]);
 }
 
 export const THEME_OPTIONS: { value: UserSettings['theme']; label: string; icon: typeof Sun }[] = [

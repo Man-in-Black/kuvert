@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDownUp, BellOff, ChevronDown, MessageSquarePlus, MessagesSquare, Phone, Search, Star, Users, UserRound } from 'lucide-react';
@@ -110,13 +110,14 @@ export default function ChatPage() {
 
 /* ═════════════════════════════ Liste ═════════════════════════════ */
 
-function ConversationList({
+export function ConversationList({
   list,
   loading,
   error,
   activeId,
   onNew,
   onOpen,
+  headerExtra,
 }: {
   list?: ChatConversation[];
   loading: boolean;
@@ -124,6 +125,8 @@ function ConversationList({
   activeId: string | null;
   onNew(mode: NewChatMode): void;
   onOpen(id: string, seq?: number): void;
+  /** Zusätzliche Knöpfe im Kopf (z. B. im Panel der Seitenleiste „Im Chat öffnen“) */
+  headerExtra?: ReactNode;
 }) {
   const me = useMe();
   const users = useUserMap();
@@ -223,6 +226,7 @@ function ConversationList({
             { label: 'Neue Gruppe', icon: <Users />, onClick: () => onNew('group') },
           ]}
         />
+        {headerExtra}
       </div>
       <div className="shrink-0 p-3 pb-2">
         <div className="relative">

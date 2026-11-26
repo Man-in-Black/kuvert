@@ -8,7 +8,7 @@ import type { NavItem, ShellAction } from '@/modules/types';
 import { Avatar, Dropdown, EmptyState, Kbd } from '@/components/ui';
 import { BrandMark } from '@/pages/AuthLayout';
 import { CommandPalette, openCommandPalette } from './CommandPalette';
-import { SidePanelDock } from './SidePanel';
+import { RightSidebar } from './RightSidebar';
 import { useNavItems, useShellActions, useUserMenuItems } from './shell-helpers';
 
 const COLLAPSE_KEY = 'kuvert.sidebar.collapsed';
@@ -56,8 +56,8 @@ export function AppShell() {
         </Routes>
       </main>
 
-      {/* Angepinnte Seitenleisten (KI-Chat, Kalender): neben dem Inhalt statt darüber */}
-      <SidePanelDock />
+      {/* Seitenleiste rechts (Kalender, Kontakte, Chat, KI-Chat, Telefon …) */}
+      <RightSidebar />
 
       <MobileNav main={main} system={system} />
       <CommandPalette />
@@ -76,7 +76,8 @@ export function AppShell() {
 function Sidebar({ main, system, collapsed, onToggle }: { main: NavItem[]; system: NavItem[]; collapsed: boolean; onToggle: () => void }) {
   const { data: app } = useAppInfo();
   const userItems = useUserMenuItems();
-  const actions = useShellActions();
+  // Panels stecken am Desktop in der Leiste rechts
+  const actions = useShellActions().filter((a) => !a.sidePanel);
   const user = app?.user;
 
   return (

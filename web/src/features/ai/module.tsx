@@ -1,11 +1,13 @@
+import { lazy } from 'react';
 import { BotMessageSquare, Sparkles } from 'lucide-react';
 import type { WebModule } from '@/modules/types';
-import { AiChatService } from './AiChatPanel';
 import { AiComposerButton } from './AiComposerButton';
 import { AiConversationActions } from './AiConversationActions';
 import { AiMessageActions } from './AiMessageActions';
 import { AiSettings } from './AiSettings';
-import { toggleAiChat, useAiChat } from './chat-store';
+import { AI_PANEL_ID } from './chat-store';
+
+const AiChatPanel = lazy(() => import('./AiChatPanel'));
 
 /** KI-Assistent (Ollama): nur aktiv, wenn der Server das Feature "ai" meldet. */
 const mod: WebModule = {
@@ -14,18 +16,18 @@ const mod: WebModule = {
   composerToolbar: [AiComposerButton],
   messageActions: [AiMessageActions],
   conversationActions: [AiConversationActions],
-  actions: [
+  sidePanels: [
     {
-      id: 'ai-chat',
+      id: AI_PANEL_ID,
       label: 'KI-Chat',
+      actionLabel: 'KI-Chat',
       icon: BotMessageSquare,
-      order: 10,
+      order: 40,
+      component: AiChatPanel,
+      defaultWidth: 440,
       keywords: 'ki ai assistent fragen chat ollama llm',
-      run: toggleAiChat,
-      useActive: () => useAiChat().open,
     },
   ],
-  services: [AiChatService],
   settings: [{ id: 'ai', label: 'KI-Assistent', icon: Sparkles, order: 70, component: AiSettings }],
 };
 

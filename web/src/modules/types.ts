@@ -30,6 +30,30 @@ export interface ShellAction {
   run: () => void;
   /** React-Hook: true, solange die Aktion „an“ ist (z. B. Panel geöffnet) */
   useActive?: () => boolean;
+  /** Aus einem SidePanelDef erzeugt – am Desktop steckt sie in der Leiste rechts, nicht links */
+  sidePanel?: boolean;
+}
+
+/**
+ * Panel in der Seitenleiste rechts (wie bei Gmail): eingeklappt ein Symbol in der schmalen
+ * Leiste, aufgeklappt ein Reiter unten. Der Inhalt wird erst beim Aufklappen geladen und
+ * bringt seinen eigenen Kopf mit; Anpinnen und Einklappen übernimmt die Leiste.
+ */
+export interface SidePanelDef {
+  /** Eindeutig, z. B. "calendar" – öffnen per openSidePanel(id) */
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  order: number;
+  component: ComponentType;
+  /** Startbreite in px (der Benutzer kann sie ziehen) */
+  defaultWidth?: number;
+  /** Name als Aktion (Befehlspalette, mobil „Mehr“); Standard: „<label>-Leiste“ */
+  actionLabel?: string;
+  /** Zusätzliche Suchbegriffe für die Befehlspalette */
+  keywords?: string;
+  /** React-Hook für ein Badge am Symbol (z. B. ungelesene Chatnachrichten); 0 = keins */
+  useBadge?: () => number;
 }
 
 export interface RouteDef {
@@ -61,6 +85,8 @@ export interface WebModule {
   routes?: RouteDef[];
   /** Globale Aktionen (siehe ShellAction) */
   actions?: ShellAction[];
+  /** Panels der Seitenleiste rechts (siehe SidePanelDef) */
+  sidePanels?: SidePanelDef[];
   /**
    * Eigenständige Fenster ohne Navigationsleiste (z. B. Verfassen im Popup).
    * Pfade liegen unter "window/", z. B. "window/compose".
