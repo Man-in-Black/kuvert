@@ -239,7 +239,7 @@ export async function accountRoutes(app: FastifyInstance, ctx: ModuleContext) {
       }
       if (!st && (req.query.admin_consent !== undefined || (!req.query.state && req.query.error))) {
         // Über einen weitergeleiteten Link zugestimmt (kein Kuvert-Vorgang dazu)
-        const ok = !req.query.error && /^true$/i.test(req.query.admin_consent);
+        const ok = !req.query.error && /^true$/i.test(req.query.admin_consent ?? '');
         return reply.type('text/html; charset=utf-8').send(consentPage(ok, req.query.error_description || req.query.error));
       }
 
