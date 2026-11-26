@@ -54,13 +54,17 @@ export default defineModule({
   init(ctx) {
     /* Anzeige: S/MIME-Nachrichten prüfen bzw. entschlüsseln */
     ctx.hooks.messageView.push(async (vctx, msg) => {
-      if (!looksLikeSmime(msg)) return msg;
+      const kind = looksLikeSmime(msg);
+      if (!kind) return msg;
       try {
         const { parsed, attachments, security } = await decode(vctx.userId, vctx.mail, vctx.folderId, msg);
         remember(cacheKey(vctx.userId, vctx.accountId, vctx.folderId, msg.id), attachments);
-        if (security.encrypted && !security.decrypted) return { ...msg, security };
+        // Liefert der Liste die echte Art nach (dort ist sie z. B. bei Relays/Graph nicht immer erkennbar)
+        const smime = security.encrypted ? 'encrypted' : security.signed ? 'signed' : kind;
+        if (security.encrypted && !security.decrypted) return { ...msg, smime, security };
         return {
           ...msg,
+          smime,
           html: parsed.detail.html,
           text: parsed.detail.text,
           preview: parsed.detail.preview,
@@ -71,7 +75,7 @@ export default defineModule({
         };
       } catch (err) {
         ctx.log.warn({ err }, 'S/MIME-Verarbeitung fehlgeschlagen');
-        return { ...msg, security: { error: `S/MIME-Verarbeitung fehlgeschlagen: ${(err as Error).message}` } };
+        return { ...msg, smime: kind, security: { error: `S/MIME-Verarbeitung fehlgeschlagen: ${(err as Error).message}` } };
       }
     });
 

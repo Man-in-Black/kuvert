@@ -41,7 +41,7 @@ import { cn, formatDateTime } from '@/lib/utils';
 import { Avatar, Badge, Button, Dropdown, EmptyState, IconButton, Spinner } from '@/components/ui';
 import { useExtensions } from '@/modules/context';
 import { openCompose } from './compose-api';
-import { fetchMessage, mailKeys, moveMessages, rawUrl, refKey, respondToInvite, toRef, wasRemoved, type MessageRef } from './api';
+import { fetchMessage, mailKeys, moveMessages, rawUrl, refKey, respondToInvite, syncListSmime, toRef, wasRemoved, type MessageRef } from './api';
 import { useMailActions } from './actions';
 import { AttachmentList } from './components/Attachments';
 import { MessageBody, isTrustedSender, messageSrcDoc } from './components/MessageBody';
@@ -98,6 +98,11 @@ export function MessageView({
   const msgKey = msg ? refKey(toRef(msg)) : undefined;
   const readTrack = useRef<{ key: string; msg: MessageDetail; done: boolean } | null>(null);
   const pendingLeave = useRef<{ key: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+
+  // Schloss/Schild in der Liste nachziehen, falls die Liste die S/MIME-Art nicht erkannt hat
+  useEffect(() => {
+    if (msg) syncListSmime(qc, msg);
+  }, [qc, msg]);
 
   useEffect(() => {
     if (!msg || !msgKey) return;

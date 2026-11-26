@@ -21,15 +21,16 @@ import type { EventResizeDoneArg } from '@fullcalendar/interaction';
 import { addDays, addHours } from 'date-fns';
 import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Columns3, Layers, Menu, Plus, RefreshCw } from 'lucide-react';
 import type { AccountInfo, CalendarEvent, CalendarInfo, UserSettings } from '@kuvert/shared';
-import { Button, ColorDot, EmptyState, IconButton, SidebarSheet, Spinner, Tabs, useConfirm } from '@/components/ui';
+import { Button, ColorDot, EmptyState, IconButton, SidebarSheet, Spinner, Tabs } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { useAccountMap, useSettings, useUpdateSettings } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/lib/useIsMobile';
-import { calKey, calKeyOf, invalidateEvents, updateEvent, useCalendars, useEvents, type AccountError } from './api';
+import { calKey, calKeyOf, getEvent, invalidateEvents, updateEvent, useCalendars, useEvents, type AccountError } from './api';
 import { EventDetails } from './EventDetails';
 import { EventEditor, type EditorInit } from './EventEditor';
 import { MiniMonth } from './MiniMonth';
+import { followingMoveInput, isFirstOccurrence, isOccurrence, isRecurring, seriesMovePatch, splitSeries, useSeriesScope, type SeriesScope } from './series';
 import { eventColor, toDateInput } from './utils';
 import { COLLAPSED_KEY, HIDDEN_KEY, usePersistentSet } from './visibility';
 import './calendar.css';
@@ -91,7 +92,7 @@ export default function CalendarPage() {
 
   const [detail, setDetail] = useState<CalendarEvent | null>(null);
   const [editor, setEditor] = useState<EditorInit | null>(null);
-  const { confirm, dialog } = useConfirm();
+  const { askScope, dialog } = useSeriesScope();
 
   // Mobil: Seitenleiste als Schublade
   const isMobile = useIsMobile();
@@ -138,6 +139,7 @@ export default function CalendarPage() {
           ev.showAs === 'tentative' || ev.myResponse === 'tentative' ? 'is-tentative' : '',
           ev.showAs === 'free' ? 'is-free' : '',
           ev.myResponse === 'needsAction' && !ev.isOrganizer ? 'is-pending' : '',
+          isRecurring(ev) ? (ev.isException ? 'is-recurring is-exception' : 'is-recurring') : '',
         ].filter(Boolean),
         extendedProps: { ev },
       });
@@ -193,25 +195,39 @@ export default function CalendarPage() {
 
   const onMove = async (arg: EventDropArg | EventResizeDoneArg) => {
     const ev = arg.event.extendedProps.ev as CalendarEvent;
-    if (ev.recurrence || ev.recurringEventId) {
-      const ok = await confirm('Dies ist ein Serientermin. Die Änderung kann je nach Anbieter die gesamte Serie betreffen. Fortfahren?');
-      if (!ok) {
-        arg.revert();
-        return;
-      }
-    }
     const allDay = arg.event.allDay;
     const start = arg.event.start!;
     const end = arg.event.end ?? (allDay ? addDays(start, 1) : addHours(start, 1));
     const fmt = (d: Date) => (allDay ? toDateInput(d) : d.toISOString());
+    let scope: SeriesScope = 'occurrence';
+    if (isOccurrence(ev)) {
+      const picked = await askScope('move', ev);
+      if (!picked) {
+        arg.revert();
+        return;
+      }
+      scope = picked;
+    }
     try {
-      await updateEvent(ev.accountId, ev.calendarId, ev.id, {
-        start: fmt(start),
-        end: fmt(end),
-        allDay,
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
-      toast.success('Termin verschoben');
+      if (scope !== 'occurrence') {
+        const master = await getEvent(ev.accountId, ev.calendarId, ev.recurringEventId!);
+        if (scope === 'following' && !isFirstOccurrence(master, ev)) {
+          const input = await followingMoveInput({ master, occurrence: ev }, { start, end, allDay });
+          await splitSeries({ master, occurrence: ev }, input);
+          toast.success('Dieser und alle folgenden Termine verschoben');
+        } else {
+          await updateEvent(master.accountId, master.calendarId, master.id, seriesMovePatch(master, ev, { start, end, allDay }));
+          toast.success('Alle Termine der Serie verschoben');
+        }
+      } else {
+        await updateEvent(ev.accountId, ev.calendarId, ev.id, {
+          start: fmt(start),
+          end: fmt(end),
+          allDay,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        });
+        toast.success(isOccurrence(ev) ? 'Termin verschoben – die übrige Serie bleibt unverändert' : 'Termin verschoben');
+      }
       await invalidateEvents(qc);
     } catch (err) {
       arg.revert();
@@ -240,6 +256,10 @@ export default function CalendarPage() {
     eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
     slotLabelFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
     eventClick: onEventClick,
+    eventDidMount: ({ event, el }) => {
+      const ev = event.extendedProps.ev as CalendarEvent | undefined;
+      if (ev && isRecurring(ev)) el.title = `${event.title} · ${ev.isException ? 'einzeln geänderter Serientermin' : 'Serientermin'}`;
+    },
     eventDrop: (a) => void onMove(a),
     eventResize: (a) => void onMove(a),
     navLinkDayClick: (date) => changeView('timeGridDay', date),
@@ -465,8 +485,8 @@ export default function CalendarPage() {
           calendar={calendarMap.get(calKey({ accountId: detail.accountId, calendarId: detail.calendarId }))}
           account={accountMap.get(detail.accountId)}
           onClose={() => setDetail(null)}
-          onEdit={() => {
-            setEditor({ event: detail });
+          onEdit={(ev, split) => {
+            setEditor({ event: ev, split });
             setDetail(null);
           }}
         />

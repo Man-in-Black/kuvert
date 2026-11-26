@@ -26,6 +26,14 @@ export function useCalendars() {
   });
 }
 
+/** Termine eines Zeitraums direkt abrufen (ohne Cache) */
+export function fetchEvents(range: { start: string; end: string }, calendars: CalendarRef[]) {
+  return api<{ events: CalendarEvent[]; errors: AccountError[] }>('/calendar/events/query', {
+    method: 'POST',
+    body: { start: range.start, end: range.end, calendars },
+  });
+}
+
 export function useEvents(range: { start: string; end: string } | null, calendars: CalendarRef[]) {
   const sel = calendars.map(calKey).sort().join(',');
   return useQuery({
@@ -38,6 +46,13 @@ export function useEvents(range: { start: string; end: string } | null, calendar
     enabled: !!range && calendars.length > 0,
     placeholderData: keepPreviousData,
     staleTime: 60_000,
+  });
+}
+
+/** Einzelnen Termin laden – mit der Serien-ID den Serienmaster (Beginn = erster Termin der Serie) */
+export function getEvent(accountId: string, calendarId: string, eventId: string) {
+  return api<CalendarEvent>(`/calendar/accounts/${encodeURIComponent(accountId)}/events/item`, {
+    query: { calendarId, eventId },
   });
 }
 

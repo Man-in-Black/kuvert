@@ -159,6 +159,23 @@ export function patchMessages(qc: QueryClient, refs: MessageRef[], patch: Partia
   }
 }
 
+/**
+ * Überträgt die S/MIME-Art einer geöffneten Nachricht in Listen und Unterhaltungen
+ * (nur Listen-Caches, nur wenn abweichend – sonst unnötige Re-Renders).
+ */
+export function syncListSmime(qc: QueryClient, msg: MessageDetail) {
+  if (!msg.smime) return;
+  const key = refKey(toRef(msg));
+  const fix = (m: MessageSummary) => (m.smime !== msg.smime && refKey(toRef(m)) === key ? { ...m, smime: msg.smime } : m);
+  qc.setQueriesData<ListData>({ queryKey: mailKeys.lists }, (data) => {
+    if (!data?.pages.some((p) => p.items.some((m) => fix(m) !== m))) return data;
+    return { ...data, pages: data.pages.map((p) => ({ ...p, items: p.items.map(fix) })) };
+  });
+  qc.setQueriesData<ThreadResult>({ queryKey: mailKeys.threads }, (data) =>
+    data?.items.some((m) => fix(m) !== m) ? { ...data, items: data.items.map(fix) } : data,
+  );
+}
+
 /** Zuletzt verschobene/gelöschte Nachrichten (z. B. damit sie beim Verlassen nicht mehr als gelesen markiert werden) */
 const removedRefs = new Set<string>();
 export const wasRemoved = (ref: MessageRef) => removedRefs.has(refKey(ref));

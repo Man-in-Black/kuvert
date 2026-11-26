@@ -73,9 +73,28 @@ export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
+/**
+ * Klartext → Editor-HTML. Aufeinanderfolgende Zeilen bilden einen Absatz mit
+ * <br>; jede Leerzeile wird zu einem leeren Absatz – so wie im Editor nach
+ * zweimal Enter. (Früher trennten Leerzeilen nur Absätze und verschwanden
+ * dadurch, z. B. bei mailto:-Texten.) Leerzeilen am Ende entfallen.
+ */
 export function textToHtml(text: string): string {
-  return escapeHtml(text)
-    .split(/\n{2,}/)
-    .map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`)
-    .join('');
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  while (lines.length > 1 && !lines[lines.length - 1]!.trim()) lines.pop();
+  const out: string[] = [];
+  let para: string[] = [];
+  const flush = () => {
+    if (para.length) out.push(`<p>${para.join('<br>')}</p>`);
+    para = [];
+  };
+  for (const line of lines) {
+    if (line.trim()) para.push(escapeHtml(line));
+    else {
+      flush();
+      out.push('<p></p>');
+    }
+  }
+  flush();
+  return out.join('');
 }

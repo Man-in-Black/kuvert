@@ -109,3 +109,21 @@ export function describeRRule(rule: string | null | undefined): string {
   if (s.end === 'until' && s.until) text += `, bis ${s.until.split('-').reverse().join('.')}`;
   return text;
 }
+
+/** Endbedingung einer Regel (COUNT bzw. UNTIL im Rohformat) */
+export function ruleEnd(rule: string): { count?: number; until?: string } {
+  const p = parts(rule);
+  const count = p.get('COUNT');
+  return { count: count ? Number(count) : undefined, until: p.get('UNTIL') };
+}
+
+/** Ersetzt die Endbedingung einer Regel; übrige Bestandteile bleiben unverändert */
+export function withRuleEnd(rule: string, end: { count?: number; until?: string }): string {
+  const rest = rule
+    .replace(/^RRULE:/i, '')
+    .split(';')
+    .filter((p) => p && !/^(COUNT|UNTIL)=/i.test(p));
+  if (end.count) rest.push(`COUNT=${Math.max(1, Math.floor(end.count))}`);
+  else if (end.until) rest.push(`UNTIL=${end.until}`);
+  return rest.join(';');
+}

@@ -43,6 +43,10 @@ export interface CalendarEvent {
   recurrence?: string | null;
   /** ID der Serie, falls dies eine Instanz ist */
   recurringEventId?: string;
+  /** Ursprünglicher Beginn einer Serien-Instanz laut Muster (auch wenn sie verschoben wurde) */
+  originalStart?: string;
+  /** Instanz einer Serie, die einzeln geändert wurde (Ausnahme) */
+  isException?: boolean;
   attendees?: Attendee[];
   organizer?: EmailAddress;
   onlineMeetingUrl?: string;
@@ -135,9 +139,13 @@ export interface Contact {
   website?: string;
   photoUrl?: string;
   etag?: string;
+  /** Nur bei Kontaktquellen (z. B. ein CRM): Merkmale wie Rollen, als Abzeichen angezeigt */
+  tags?: string[];
+  /** Nur bei Kontaktquellen: weiterführende Links; `url` mit „/“ am Anfang führt in Kuvert */
+  links?: { label: string; url: string }[];
 }
 
-export type ContactInput = Omit<Contact, 'id' | 'accountId' | 'addressBookId' | 'etag'>;
+export type ContactInput = Omit<Contact, 'id' | 'accountId' | 'addressBookId' | 'etag' | 'tags' | 'links'>;
 
 export interface AddressSuggestion {
   name?: string;

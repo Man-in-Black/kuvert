@@ -51,8 +51,22 @@ function parseRule(rrule: string): Record<string, string> {
   return out;
 }
 
-/** RRULE → Graph-Recurrence. startDate = erstes Datum (YYYY-MM-DD) in der Zeitzone des Termins. */
-export function rruleToGraph(rrule: string, startDate: string, timeZone = 'UTC'): GraphRecurrence {
+/** Kalenderdatum eines Zeitpunkts in einer IANA-Zone (YYYY-MM-DD) oder undefined */
+function localDateIn(d: Date, tz: string | undefined): string | undefined {
+  if (!tz || Number.isNaN(d.getTime())) return undefined;
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * RRULE → Graph-Recurrence. startDate = erstes Datum (YYYY-MM-DD) in der Zeitzone des Termins.
+ * localTz (IANA, z. B. vom Browser): ein genauer UNTIL-Zeitpunkt (z. B. beim Teilen einer
+ * Serie) wird in dieses Kalenderdatum umgerechnet – Graph kennt als Serienende nur ein Datum.
+ */
+export function rruleToGraph(rrule: string, startDate: string, timeZone = 'UTC', localTz?: string): GraphRecurrence {
   const r = parseRule(rrule);
   const start = new Date(`${startDate}T00:00:00Z`);
   const interval = Math.max(1, Number(r.INTERVAL ?? 1) || 1);
@@ -107,7 +121,10 @@ export function rruleToGraph(rrule: string, startDate: string, timeZone = 'UTC')
     range = { type: 'numbered', startDate, numberOfOccurrences: Math.max(1, Number(r.COUNT)), recurrenceTimeZone: timeZone };
   } else if (r.UNTIL) {
     const u = r.UNTIL.replace(/[^0-9]/g, '');
-    const endDate = `${u.slice(0, 4)}-${u.slice(4, 6)}-${u.slice(6, 8)}`;
+    const m = r.UNTIL.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/i);
+    // „…T235959Z“ ist die übliche Datums-Schreibweise (siehe graphToRrule) – nur echte Zeitpunkte umrechnen
+    const utc = m && !/T235959Z$/i.test(r.UNTIL) ? new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!, +m[6]!)) : undefined;
+    const endDate = (utc && localDateIn(utc, localTz)) ?? `${u.slice(0, 4)}-${u.slice(4, 6)}-${u.slice(6, 8)}`;
     range = { type: 'endDate', startDate, endDate, recurrenceTimeZone: timeZone };
   } else {
     range = { type: 'noEnd', startDate, recurrenceTimeZone: timeZone };

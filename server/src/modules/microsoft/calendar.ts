@@ -28,6 +28,7 @@ interface GEvent {
   recurrence?: GraphRecurrence | null;
   seriesMasterId?: string | null;
   type?: 'singleInstance' | 'occurrence' | 'exception' | 'seriesMaster';
+  originalStart?: string | null;
   attendees?: { emailAddress?: { name?: string; address?: string }; status?: { response?: string }; type?: string }[];
   organizer?: { emailAddress?: { name?: string; address?: string } };
   onlineMeeting?: { joinUrl?: string } | null;
@@ -69,6 +70,7 @@ const EVENT_SELECT = [
   'recurrence',
   'seriesMasterId',
   'type',
+  'originalStart',
   'attendees',
   'organizer',
   'onlineMeeting',
@@ -212,6 +214,8 @@ export class GraphCalendarProvider implements CalendarProvider {
       timeZone: e.originalStartTimeZone,
       recurrence: graphToRrule(e.recurrence),
       recurringEventId: e.seriesMasterId ?? undefined,
+      isException: e.type === 'exception' || undefined,
+      originalStart: !allDay && e.originalStart ? new Date(e.originalStart).toISOString() : undefined,
       attendees,
       organizer: e.organizer?.emailAddress?.address
         ? { name: e.organizer.emailAddress.name || undefined, address: e.organizer.emailAddress.address }
@@ -294,7 +298,7 @@ export class GraphCalendarProvider implements CalendarProvider {
           recurrenceTz = cur.originalStartTimeZone || tz;
         }
         const startDate = localDate(startIso ?? new Date().toISOString(), allDay ? undefined : input.timeZone || recurrenceTz);
-        body.recurrence = rruleToGraph(input.recurrence, startDate, recurrenceTz);
+        body.recurrence = rruleToGraph(input.recurrence, startDate, recurrenceTz, input.timeZone);
       }
     }
     return body;
@@ -433,6 +437,12 @@ export class GraphCalendarProvider implements CalendarProvider {
     }
     const ev = await this.graph.json<GEvent>(path, { method: 'PATCH', body, prefer: UTC_PREFER });
     if (native) return this.toEvent(await this.ensureTeams(path, ev), calendarId);
+    return this.toEvent(ev, calendarId);
+  }
+
+  async getEvent(calendarId: string, eventId: string): Promise<CalendarEvent> {
+    const c = decId(calendarId);
+    const ev = await this.graph.json<GEvent>(`${mbPath(c.mb)}/events/${enc(eventId)}?$select=${EVENT_SELECT}`, { prefer: UTC_PREFER });
     return this.toEvent(ev, calendarId);
   }
 

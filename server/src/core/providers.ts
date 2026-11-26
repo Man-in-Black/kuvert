@@ -155,6 +155,8 @@ export interface CalendarProvider {
   createEvent(calendarId: string, input: EventInput): Promise<CalendarEvent>;
   updateEvent(calendarId: string, eventId: string, input: Partial<EventInput>): Promise<CalendarEvent>;
   deleteEvent(calendarId: string, eventId: string): Promise<void>;
+  /** Einzelnen Termin laden – bei einer Serien-ID den Serienmaster (Beginn = erster Termin) */
+  getEvent?(calendarId: string, eventId: string): Promise<CalendarEvent>;
   respondToEvent?(calendarId: string, eventId: string, response: EventResponse, comment?: string): Promise<void>;
   dispose?(): Promise<void>;
 }

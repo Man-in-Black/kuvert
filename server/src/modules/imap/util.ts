@@ -71,7 +71,20 @@ export function parseAliasList(input: unknown): EmailAddress[] {
 export function smimeOf(node?: MessageStructureObject): SmimeKind | undefined {
   if (!node?.type) return undefined;
   const params = Object.entries(node.parameters ?? {}).map(([k, v]) => `; ${k}=${v}`);
-  return smimeFromContentType(node.type + params.join(''));
+  const top = smimeFromContentType(node.type + params.join(''));
+  if (top) return top;
+  // Verteiler/Relays („X via Y“) packen verschlüsselte Mails teils in multipart/mixed
+  // (z. B. mit Fußzeile) – der Container smime.p7m liegt dann eine Ebene tiefer
+  return node.childNodes?.some(wrapsEncrypted) ? 'encrypted' : undefined;
+}
+
+function wrapsEncrypted(node: MessageStructureObject): boolean {
+  const type = (node.type ?? '').toLowerCase();
+  if (type === 'message/rfc822') return false; // weitergeleitete Mail ist nicht diese Mail
+  if (node.childNodes?.length) return node.childNodes.some(wrapsEncrypted);
+  const name = (node.dispositionParameters?.filename || node.parameters?.name || '').toLowerCase();
+  if (type.includes('pkcs7-mime')) return !(node.parameters?.['smime-type'] ?? '').toLowerCase().includes('signed');
+  return name === 'smime.p7m';
 }
 
 export function hasAttachments(node?: MessageStructureObject): boolean {

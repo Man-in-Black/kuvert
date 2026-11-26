@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   CalendarDays,
@@ -21,9 +21,10 @@ import type { AccountInfo, Attendee, CalendarEvent, CalendarInfo, EventResponse 
 import { Avatar, Badge, Button, IconButton, useConfirm } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { deleteEvent, invalidateEvents, respondToEvent } from './api';
+import { deleteEvent, getEvent, invalidateEvents, respondToEvent } from './api';
 import { mapsSearchUrl } from './LocationInput';
 import { describeRRule } from './rrule';
+import { deleteFollowing, followingRule, isFirstOccurrence, isOccurrence, isRecurring as isRecurringEvent, useSeriesScope, type SplitContext } from './series';
 import { SHOW_AS_LABELS, eventColor, eventDescription, formatEventRange } from './utils';
 
 const STATUS_LABEL: Record<NonNullable<Attendee['status']>, string> = {
@@ -80,26 +81,79 @@ export function EventDetails({
   calendar?: CalendarInfo;
   account?: AccountInfo;
   onClose: () => void;
-  onEdit: () => void;
+  /**
+   * Bearbeiten – mit der Instanz, dem Serienmaster (ganze Serie) oder, bei „dieser und
+   * alle folgenden“, einem Entwurf des neuen Serienteils samt `split`
+   */
+  onEdit: (event: CalendarEvent, split?: SplitContext) => void;
 }) {
   const qc = useQueryClient();
   const { confirm, dialog } = useConfirm();
+  const { askScope, dialog: scopeDialog } = useSeriesScope();
   const [busy, setBusy] = useState<string | null>(null);
   const color = eventColor(event, calendar, account);
   const description = eventDescription(event);
   const readOnly = !!calendar?.readOnly;
   const canRespond = !event.isOrganizer && (!!event.myResponse || (event.attendees?.length ?? 0) > 0);
-  const isRecurring = !!(event.recurrence || event.recurringEventId);
+  const isRecurring = isRecurringEvent(event);
+  const occurrence = isOccurrence(event);
+
+  // Serienregel nachladen, wenn die Instanz sie nicht mitbringt (Microsoft, Google)
+  const { data: series } = useQuery({
+    queryKey: ['calendar', 'events', 'series', event.accountId, event.calendarId, event.recurringEventId],
+    queryFn: () => getEvent(event.accountId, event.calendarId, event.recurringEventId!),
+    enabled: occurrence && !event.recurrence,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const rule = event.recurrence ?? series?.recurrence;
+
+  const edit = async () => {
+    if (!occurrence) return onEdit(event);
+    const scope = await askScope('edit', event);
+    if (!scope) return;
+    if (scope === 'occurrence') return onEdit(event);
+    setBusy('edit');
+    try {
+      const master = series ?? (await getEvent(event.accountId, event.calendarId, event.recurringEventId!));
+      if (scope === 'series' || isFirstOccurrence(master, event)) return onEdit(master);
+      // Entwurf des neuen Serienteils: Inhalte der Serie, Zeiten dieses Termins
+      const rule = await followingRule(master, event);
+      onEdit({ ...master, start: event.start, end: event.end, allDay: event.allDay, recurrence: rule }, { master, occurrence: event });
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const remove = async () => {
-    const msg = isRecurring
-      ? 'Dies ist ein Serientermin. Je nach Anbieter wird die gesamte Serie gelöscht. Fortfahren?'
-      : `Termin „${event.title || 'Ohne Titel'}“ wirklich löschen?`;
-    if (!(await confirm(msg, { danger: true }))) return;
+    let targetId = event.id;
+    let done = 'Termin gelöscht';
+    let following = false;
+    if (occurrence) {
+      const scope = await askScope('delete', event);
+      if (!scope) return;
+      if (scope === 'series') {
+        targetId = event.recurringEventId!;
+        done = 'Serie gelöscht';
+      } else if (scope === 'following') {
+        following = true;
+        done = 'Dieser und alle folgenden Termine gelöscht';
+      } else done = 'Termin gelöscht – die übrige Serie bleibt bestehen';
+    } else {
+      const msg = isRecurring
+        ? `„${event.title || 'Ohne Titel'}“ ist eine Terminserie. Alle Termine der Serie löschen?`
+        : `Termin „${event.title || 'Ohne Titel'}“ wirklich löschen?`;
+      if (!(await confirm(msg, { danger: true }))) return;
+    }
     setBusy('delete');
     try {
-      await deleteEvent(event.accountId, event.calendarId, event.id);
-      toast.success('Termin gelöscht');
+      if (following) {
+        const master = series ?? (await getEvent(event.accountId, event.calendarId, event.recurringEventId!));
+        await deleteFollowing({ master, occurrence: event });
+      } else await deleteEvent(event.accountId, event.calendarId, targetId);
+      toast.success(done);
       await invalidateEvents(qc);
       onClose();
     } catch (err) {
@@ -133,6 +187,12 @@ export function EventDetails({
           </h2>
           <div className="mt-1 flex flex-wrap gap-1">
             {event.status === 'cancelled' && <Badge color="#dc2626">Abgesagt</Badge>}
+            {isRecurring && (
+              <Badge>
+                <Repeat className="h-3 w-3" />
+                {event.isException ? 'Serie · einzeln geändert' : 'Serientermin'}
+              </Badge>
+            )}
             {event.showAs && event.showAs !== 'busy' && <Badge>{SHOW_AS_LABELS[event.showAs]}</Badge>}
             {event.myResponse && event.myResponse !== 'none' && !event.isOrganizer && <Badge>{STATUS_LABEL[event.myResponse]}</Badge>}
           </div>
@@ -148,8 +208,11 @@ export function EventDetails({
           {isRecurring && (
             <div className="mt-0.5 flex items-center gap-1 text-xs text-muted">
               <Repeat className="h-3 w-3" />
-              {event.recurrence ? describeRRule(event.recurrence) : 'Teil einer Serie'}
+              {rule ? describeRRule(rule) : 'Teil einer Serie'}
             </div>
+          )}
+          {event.isException && (
+            <div className="mt-0.5 text-xs text-muted">Dieser Termin wurde einzeln geändert und weicht von der Serie ab.</div>
           )}
         </Row>
 
@@ -247,12 +310,13 @@ export function EventDetails({
           <Button variant="ghost" className="text-danger" icon={<Trash2 className="h-4 w-4" />} loading={busy === 'delete'} onClick={remove}>
             Löschen
           </Button>
-          <Button icon={<Pencil className="h-4 w-4" />} onClick={onEdit}>
+          <Button icon={<Pencil className="h-4 w-4" />} loading={busy === 'edit'} onClick={edit}>
             Bearbeiten
           </Button>
         </div>
       )}
       {dialog}
+      {scopeDialog}
     </aside>
   );
 }

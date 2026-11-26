@@ -2,13 +2,14 @@ import { useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { addDays, addHours, differenceInMinutes, startOfHour } from 'date-fns';
-import { AlertTriangle, Video } from 'lucide-react';
+import { Info, Repeat, Video } from 'lucide-react';
 import type { AccountInfo, Attendee, CalendarEvent, CalendarInfo, EmailAddress, EventInput, ShowAs } from '@kuvert/shared';
 import { AddressInput } from '@/components/AddressInput';
 import { Button, Checkbox, Field, Input, Modal, Select, Textarea } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { calKey, calKeyOf, createEvent, invalidateEvents, updateEvent } from './api';
 import { LocationInput } from './LocationInput';
+import { isOccurrence, isSeriesMaster, splitSeries, type SplitContext } from './series';
 import { PRESET_LABELS, buildRRule, parseRRule, type RecurrencePreset, type RecurrenceState } from './rrule';
 import { REMINDER_OPTIONS, SHOW_AS_LABELS, eventDescription, meetingLabel, parseEventDate, toDateInput, toTimeInput } from './utils';
 
@@ -18,6 +19,8 @@ export interface EditorInit {
   end?: Date;
   allDay?: boolean;
   calendarKey?: string;
+  /** „Dieser und alle folgenden“: event ist der Entwurf des neuen Serienteils */
+  split?: SplitContext;
 }
 
 interface FormState {
@@ -118,7 +121,12 @@ export function EventEditor({
 }) {
   const qc = useQueryClient();
   const editing = init.event;
-  const isRecurring = !!(editing?.recurrence || editing?.recurringEventId);
+  /** nur diese eine Instanz einer Serie */
+  const occurrence = !!editing && isOccurrence(editing);
+  /** dieser und alle folgenden Termine (Serie wird geteilt) */
+  const split = init.split;
+  /** gesamte Serie (Master) */
+  const seriesMaster = !!editing && !split && isSeriesMaster(editing);
   const [s, setS] = useState<FormState>(() => initialState(init, defaultCalendarKey));
   const initialInput = useRef<EventInput>(toInput(initialState(init, defaultCalendarKey), editing));
   const [saving, setSaving] = useState(false);
@@ -165,6 +173,21 @@ export function EventEditor({
     try {
       let result: CalendarEvent;
       let meetingRequested = false;
+      if (split) {
+        // Unveränderte Beschreibung im Original (HTML, z. B. mit Teams-Block) übernehmen
+        if (input.description === initialInput.current.description && split.master.descriptionHtml) {
+          delete input.description;
+          input.descriptionHtml = split.master.descriptionHtml;
+        }
+        if (!input.title) input.title = '(Ohne Titel)';
+        if (!calendar.canOnlineMeeting) delete input.onlineMeeting;
+        result = await splitSeries(split, input);
+        toast.success('Dieser und alle folgenden Termine geändert');
+        await invalidateEvents(qc);
+        onSaved?.(result);
+        onClose();
+        return;
+      }
       if (editing) {
         // Nur geänderte Felder senden (verhindert z. B. Verlust von HTML-Beschreibungen)
         const patch: Partial<EventInput> = {};
@@ -179,7 +202,11 @@ export function EventEditor({
           patch.end = input.end;
           patch.allDay = input.allDay;
           patch.timeZone = input.timeZone;
+          // Serie auf neuen Starttag: Regel mitsenden, damit Wochentag/Seriendatum beim Anbieter passen
+          if (seriesMaster && input.recurrence && input.start.slice(0, 10) !== initialInput.current.start.slice(0, 10)) patch.recurrence = input.recurrence;
         }
+        // Einzeltermin einer Serie: die Regel gehört der Serie
+        if (occurrence) delete patch.recurrence;
         if (Object.keys(patch).length === 0) {
           onClose();
           return;
@@ -212,7 +239,7 @@ export function EventEditor({
       open
       size="lg"
       onClose={onClose}
-      title={editing ? 'Termin bearbeiten' : 'Neuer Termin'}
+      title={split ? 'Diesen und alle folgenden bearbeiten' : seriesMaster ? 'Serie bearbeiten' : editing ? 'Termin bearbeiten' : 'Neuer Termin'}
       footer={
         <>
           <Button onClick={onClose}>Abbrechen</Button>
@@ -229,10 +256,24 @@ export function EventEditor({
           void save();
         }}
       >
-        {isRecurring && (
-          <div className="flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Dies ist ein Serientermin – Änderungen können je nach Anbieter die gesamte Serie betreffen.
+        {occurrence && (
+          <div className="flex items-start gap-2 rounded-md bg-surface-2 px-3 py-2 text-xs text-muted">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            Du bearbeitest nur diesen einen Termin der Serie. Die übrigen Termine bleiben unverändert.
+          </div>
+        )}
+        {split && (
+          <div className="flex items-start gap-2 rounded-md bg-primary-soft px-3 py-2 text-xs text-primary">
+            <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            Du bearbeitest diesen und alle folgenden Termine. Die bisherige Serie endet am Vortag, ab hier entsteht eine neue Serie mit deinen
+            Änderungen{(editing?.attendees?.length ?? 0) > 0 ? ' – die Teilnehmer erhalten dafür eine neue Einladung' : ''}.
+          </div>
+        )}
+        {seriesMaster && (
+          <div className="flex items-start gap-2 rounded-md bg-primary-soft px-3 py-2 text-xs text-primary">
+            <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            Du bearbeitest die gesamte Serie. Beginn und Ende beziehen sich auf den ersten Termin; Änderungen gelten für alle Termine. Einzeln geänderte
+            Termine können beim Ändern der Uhrzeit je nach Anbieter zurückgesetzt werden.
           </div>
         )}
         <Input
@@ -320,26 +361,28 @@ export function EventEditor({
             </Select>
           </Field>
           <Field label="Wiederholung">
-            <Select
-              value={s.recurrence.preset}
-              disabled={!!editing?.recurringEventId}
-              onChange={(e) => set('recurrence', { ...s.recurrence, preset: e.target.value as RecurrencePreset })}
-            >
-              {(Object.keys(PRESET_LABELS) as RecurrencePreset[])
-                .filter((p) => p !== 'custom' || s.recurrence.raw)
-                .map((p) => (
-                  <option key={p} value={p}>
-                    {PRESET_LABELS[p]}
-                  </option>
-                ))}
-            </Select>
+            {occurrence ? (
+              <div className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 text-sm text-muted">
+                <Repeat className="h-3.5 w-3.5 shrink-0" /> Teil einer Serie
+              </div>
+            ) : (
+              <Select value={s.recurrence.preset} onChange={(e) => set('recurrence', { ...s.recurrence, preset: e.target.value as RecurrencePreset })}>
+                {(Object.keys(PRESET_LABELS) as RecurrencePreset[])
+                  .filter((p) => p !== 'custom' || s.recurrence.raw)
+                  .map((p) => (
+                    <option key={p} value={p}>
+                      {PRESET_LABELS[p]}
+                    </option>
+                  ))}
+              </Select>
+            )}
           </Field>
         </div>
 
-        {s.recurrence.preset === 'custom' && s.recurrence.raw && (
+        {!occurrence && s.recurrence.preset === 'custom' && s.recurrence.raw && (
           <div className="rounded-md bg-surface-2 px-3 py-2 font-mono text-xs text-muted">RRULE: {s.recurrence.raw}</div>
         )}
-        {s.recurrence.preset !== 'none' && s.recurrence.preset !== 'custom' && (
+        {!occurrence && s.recurrence.preset !== 'none' && s.recurrence.preset !== 'custom' && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted">Endet</span>
             <Select

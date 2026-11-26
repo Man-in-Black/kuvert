@@ -151,6 +151,13 @@ export async function pimRoutes(app: FastifyInstance, ctx: ModuleContext) {
     return ev;
   });
 
+  app.get<AccParams & { Querystring: { calendarId: string; eventId: string } }>('/api/calendar/accounts/:accountId/events/item', async (req) => {
+    const q = parse(z.object({ calendarId: z.string(), eventId: z.string() }), req.query);
+    const cal = accounts.require(req.user.id, req.params.accountId, 'calendar');
+    if (!cal.getEvent) throw new BadRequestError('Einzelabruf von Terminen wird von diesem Konto nicht unterstützt');
+    return cal.getEvent(q.calendarId, q.eventId);
+  });
+
   app.delete<AccParams & { Querystring: { calendarId: string; eventId: string } }>('/api/calendar/accounts/:accountId/events', async (req) => {
     await accounts.require(req.user.id, req.params.accountId, 'calendar').deleteEvent(req.query.calendarId, req.query.eventId);
     ctx.bus.publish(req.user.id, { type: 'calendar.changed', accountId: req.params.accountId });

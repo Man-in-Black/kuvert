@@ -42,6 +42,7 @@ interface GEvent {
   end?: { date?: string; dateTime?: string; timeZone?: string };
   recurrence?: string[];
   recurringEventId?: string;
+  originalStartTime?: { date?: string; dateTime?: string; timeZone?: string };
   transparency?: 'opaque' | 'transparent';
   attendees?: GAttendee[];
   organizer?: { email?: string; displayName?: string; self?: boolean };
@@ -65,6 +66,16 @@ function addDays(date: string, days: number): string {
   const d = new Date(`${date.slice(0, 10)}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+/** Instanz, deren Zeit vom Serienmuster abweicht (Google liefert keinen eigenen Typ) */
+function isMovedInstance(e: GEvent): boolean {
+  if (!e.recurringEventId || !e.originalStartTime) return false;
+  const orig = e.originalStartTime.date ?? e.originalStartTime.dateTime;
+  const cur = e.start?.date ?? e.start?.dateTime;
+  if (!orig || !cur) return false;
+  if (e.originalStartTime.date || e.start?.date) return orig.slice(0, 10) !== cur.slice(0, 10) || !!e.originalStartTime.date !== !!e.start?.date;
+  return new Date(orig).getTime() !== new Date(cur).getTime();
 }
 
 const looksLikeHtml = (s: string) => /<\/?[a-z][\s\S]*>/i.test(s);
@@ -121,6 +132,10 @@ export class GoogleCalendarProvider implements CalendarProvider {
       timeZone: e.start?.timeZone,
       recurrence: rrule ? rrule.slice('RRULE:'.length) : null,
       recurringEventId: e.recurringEventId,
+      isException: isMovedInstance(e) || undefined,
+      originalStart: e.originalStartTime
+        ? (e.originalStartTime.date ?? (e.originalStartTime.dateTime ? new Date(e.originalStartTime.dateTime).toISOString() : undefined))
+        : undefined,
       attendees: e.attendees?.map<Attendee>((a) => ({
         name: a.displayName,
         address: a.email,
@@ -219,8 +234,12 @@ export class GoogleCalendarProvider implements CalendarProvider {
     return body;
   }
 
-  private async getEvent(calendarId: string, eventId: string): Promise<GEvent> {
+  private async fetchEvent(calendarId: string, eventId: string): Promise<GEvent> {
     return this.g.json<GEvent>(this.calUrl(calendarId, `/${encodeURIComponent(eventId)}`));
+  }
+
+  async getEvent(calendarId: string, eventId: string): Promise<CalendarEvent> {
+    return this.toEvent(await this.fetchEvent(calendarId, eventId), calendarId);
   }
 
   async createEvent(calendarId: string, input: EventInput): Promise<CalendarEvent> {
@@ -232,7 +251,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   async updateEvent(calendarId: string, eventId: string, input: Partial<EventInput>): Promise<CalendarEvent> {
-    const existing = await this.getEvent(calendarId, eventId);
+    const existing = await this.fetchEvent(calendarId, eventId);
     const updated = await this.g.json<GEvent>(
       gurl(this.calUrl(calendarId, `/${encodeURIComponent(eventId)}`), {
         conferenceDataVersion: 1,
@@ -253,7 +272,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   async respondToEvent(calendarId: string, eventId: string, response: EventResponse, comment?: string): Promise<void> {
-    const ev = await this.getEvent(calendarId, eventId);
+    const ev = await this.fetchEvent(calendarId, eventId);
     const me = this.g.email.toLowerCase();
     const attendees = ev.attendees ?? [];
     const self = attendees.find((a) => a.self) ?? attendees.find((a) => a.email.toLowerCase() === me);

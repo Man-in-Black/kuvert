@@ -5,7 +5,7 @@
 import crypto from 'node:crypto';
 import ICAL from 'ical.js';
 import type { Attendee, AttendeeStatus, CalendarEvent, EventInput, Task, TaskInput } from '@kuvert/shared';
-import { addDays, dateOnly, isoToTime, timeToDate, timeToIso } from './time.js';
+import { addDays, dateOnly, isoToTime, isoToZonedTime, nthWeekdayOfMonth, timeToDate, timeToIso, wallMs, zoneRules } from './time.js';
 
 type Component = InstanceType<typeof ICAL.Component>;
 type ICalTime = InstanceType<typeof ICAL.Time>;
@@ -165,6 +165,7 @@ function mapEvent(
     timeZone: tzStart,
     recurrence: rrule ? String(rrule.toString()) : null,
     recurringEventId: occurrence ? ctx.url : undefined,
+    originalStart: occurrence?.recurrenceIso,
     attendees: attendees.length ? attendees : undefined,
     organizer: organizerAddr ? { address: organizerAddr, name: typeof organizerCn === 'string' ? organizerCn : undefined } : undefined,
     onlineMeetingUrl: meetingUrl,
@@ -227,6 +228,7 @@ export function parseEvents(ics: string, ctx: ParseContext, range: { start: Date
       if (!overlaps(sDate, eDate)) continue;
       const recurrenceIso = timeToIso(details.recurrenceId, tz);
       const mapped = mapEvent(details.item, ctx, details.startDate, details.endDate, { recurrenceIso });
+      if (details.item !== ev) mapped.isException = true;
       // Serienregel vom Master übernehmen, damit die Oberfläche die Serie erkennt
       mapped.recurrence = ev.component.getFirstPropertyValue('rrule')?.toString() ?? mapped.recurrence;
       if (mapped.status === 'cancelled') continue;
@@ -242,11 +244,27 @@ export function parseEvents(ics: string, ctx: ParseContext, range: { start: Date
     const ev = new ICAL.Event(x);
     const rid = ev.recurrenceId;
     const mapped = mapEvent(ev, ctx, ev.startDate, ev.endDate, { recurrenceIso: timeToIso(rid, tzidOf(x, 'recurrence-id')) });
+    mapped.isException = true;
     const sd = new Date(mapped.allDay ? `${mapped.start}T00:00:00Z` : mapped.start);
     const ed = new Date(mapped.allDay ? `${mapped.end}T00:00:00Z` : mapped.end);
     if (overlaps(sd, ed)) out.push(mapped);
   }
   return out;
+}
+
+/** Liest den Master eines Objekts (bei Serien: Beginn = erster Termin, inkl. RRULE). */
+export function parseMasterEvent(ics: string, ctx: ParseContext): CalendarEvent | undefined {
+  let vcal: Component;
+  try {
+    vcal = parseCalendar(ics);
+  } catch {
+    return undefined;
+  }
+  const master = findMaster(vcal);
+  if (!master) return undefined;
+  const ev = new ICAL.Event(master);
+  if (!ev.startDate) return undefined;
+  return mapEvent(ev, ctx, ev.startDate, master.getFirstProperty('dtend') || master.getFirstProperty('duration') ? ev.endDate : undefined);
 }
 
 /* ═════════════════════════════ Termine schreiben ═════════════════════════════ */
@@ -265,6 +283,66 @@ function setTimeProp(comp: Component, name: string, time: ICalTime) {
   comp.addProperty(p);
 }
 
+/**
+ * Setzt eine Zeit-Eigenschaft. Mit TZID als Wandzeit in dieser Zone – wichtig für
+ * Serien, damit „09:00“ auch nach der Sommerzeit-Umstellung 09:00 bleibt. Ohne
+ * (auflösbare) Zone als UTC bzw. Datum.
+ */
+function setTimeValue(comp: Component, name: string, iso: string, allDay: boolean, tzid?: string) {
+  const zoned = !allDay && tzid ? isoToZonedTime(iso, tzid) : undefined;
+  setTimeProp(comp, name, zoned ?? isoToTime(iso, allDay));
+  if (zoned) comp.getFirstProperty(name)?.setParameter('tzid', tzid!);
+}
+
+const DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+
+/**
+ * Ergänzt fehlende VTIMEZONE-Definitionen für alle in VEVENTs verwendeten TZIDs
+ * (RFC 5545 verlangt sie). Erzeugt aus der IANA-Zone; unbekannte Zonen bleiben unberührt.
+ */
+function ensureVtimezones(vcal: Component) {
+  const have = new Set(vcal.getAllSubcomponents('vtimezone').map((v) => String(v.getFirstPropertyValue('tzid') ?? '')));
+  const used = new Set<string>();
+  for (const v of vcal.getAllSubcomponents('vevent')) {
+    for (const name of ['dtstart', 'dtend', 'recurrence-id', 'exdate']) {
+      for (const p of v.getAllProperties(name)) {
+        const tz = p.getParameter('tzid');
+        if (typeof tz === 'string' && tz) used.add(tz);
+      }
+    }
+  }
+  const offset = (min: number) => ICAL.UtcOffset.fromSeconds(min * 60);
+  for (const tzid of used) {
+    if (have.has(tzid)) continue;
+    const info = zoneRules(tzid);
+    if (!info) continue;
+    const vtz = new ICAL.Component('vtimezone');
+    vtz.addPropertyWithValue('tzid', tzid);
+    if (!info.rules.length) {
+      const std = new ICAL.Component('standard');
+      std.addPropertyWithValue('dtstart', ICAL.Time.fromData({ year: 1970, month: 1, day: 1, hour: 0, minute: 0, second: 0, isDate: false }));
+      std.addPropertyWithValue('tzoffsetfrom', offset(info.offset));
+      std.addPropertyWithValue('tzoffsetto', offset(info.offset));
+      vtz.addSubcomponent(std);
+    }
+    for (const r of info.rules) {
+      const c = new ICAL.Component(r.kind);
+      const day = nthWeekdayOfMonth(1970, r.month, r.weekday, r.nth);
+      c.addPropertyWithValue('dtstart', ICAL.Time.fromData({ year: 1970, month: r.month, day, hour: r.hour, minute: r.minute, second: 0, isDate: false }));
+      c.addPropertyWithValue('rrule', ICAL.Recur.fromString(`FREQ=YEARLY;BYMONTH=${r.month};BYDAY=${r.nth}${DAY_CODES[r.weekday]}`));
+      c.addPropertyWithValue('tzoffsetfrom', offset(r.from));
+      c.addPropertyWithValue('tzoffsetto', offset(r.to));
+      vtz.addSubcomponent(c);
+    }
+    // VTIMEZONE vor die Termine stellen
+    const events = vcal.getAllSubcomponents('vevent');
+    for (const e of events) vcal.removeSubcomponent(e);
+    vcal.addSubcomponent(vtz);
+    for (const e of events) vcal.addSubcomponent(e);
+    have.add(tzid);
+  }
+}
+
 /** Wendet Änderungen aus EventInput auf eine VEVENT-Komponente an. */
 function applyEventInput(vevent: Component, input: Partial<EventInput>, opts: { organizerEmail?: string; isMaster: boolean }) {
   setText(vevent, 'summary', input.title);
@@ -277,6 +355,10 @@ function applyEventInput(vevent: Component, input: Partial<EventInput>, opts: { 
     const curEnd = vevent.getFirstPropertyValue('dtend') as unknown as ICalTime | null;
     const allDay = input.allDay ?? curStart?.isDate ?? false;
     const tz = tzidOf(vevent);
+    // Serien ohne bisherige Zone (neu oder bisher ganztägig) in der Zone des Nutzers verankern
+    const recurs = opts.isMaster && (input.recurrence !== undefined ? !!input.recurrence : !!vevent.getFirstProperty('rrule'));
+    const writeTz = tz ?? (recurs ? input.timeZone : undefined);
+    const writeTzEnd = tzidOf(vevent, 'dtend') ?? writeTz;
     const startIso = input.start ?? (curStart ? timeToIso(curStart, tz) : undefined);
     if (!startIso) throw new Error('Startzeit fehlt');
     let endIso = input.end ?? (curEnd ? timeToIso(curEnd, tzidOf(vevent, 'dtend') ?? tz) : undefined);
@@ -288,8 +370,8 @@ function applyEventInput(vevent: Component, input: Partial<EventInput>, opts: { 
       setTimeProp(vevent, 'dtend', isoToTime(e, true));
     } else {
       if (!endIso || new Date(endIso) < new Date(startIso)) endIso = new Date(new Date(startIso).getTime() + 3600_000).toISOString();
-      setTimeProp(vevent, 'dtstart', isoToTime(startIso, false));
-      setTimeProp(vevent, 'dtend', isoToTime(endIso, false));
+      setTimeValue(vevent, 'dtstart', startIso, false, writeTz);
+      setTimeValue(vevent, 'dtend', endIso, false, writeTzEnd);
     }
     vevent.removeAllProperties('duration');
   }
@@ -336,6 +418,7 @@ export function buildNewEvent(input: EventInput, opts: { uid?: string; organizer
   vcal.addSubcomponent(vevent);
   applyEventInput(vevent, { allDay: false, ...input }, { organizerEmail: opts.organizerEmail, isMaster: true });
   if (!input.title) vevent.updatePropertyWithValue('summary', '(Ohne Titel)');
+  ensureVtimezones(vcal);
   return { uid, ics: vcal.toString() };
 }
 
@@ -373,8 +456,15 @@ export function updateEventIcs(
   if (!master) throw new Error('Kein VEVENT im Objekt gefunden');
 
   if (!opts.recurrenceIso) {
+    const before = master.getFirstPropertyValue('dtstart') as unknown as ICalTime | null;
     applyEventInput(master, input, { organizerEmail: opts.organizerEmail, isMaster: true });
     bumpSequence(master);
+    const after = master.getFirstPropertyValue('dtstart') as unknown as ICalTime | null;
+    if (before && after && master.getFirstProperty('rrule')) {
+      realignOverrides(vcal, master, before.isDate === after.isDate ? wallMs(after) - wallMs(before) : null);
+    }
+    if (input.recurrence !== undefined) dropOverridesAfterUntil(vcal, master);
+    ensureVtimezones(vcal);
     return vcal.toString();
   }
 
@@ -385,7 +475,7 @@ export function updateEventIcs(
     exc.removeAllProperties('rdate');
     exc.removeAllProperties('exdate');
     const allDay = (master.getFirstPropertyValue('dtstart') as unknown as ICalTime | null)?.isDate ?? false;
-    setTimeProp(exc, 'recurrence-id', isoToTime(opts.recurrenceIso, allDay));
+    setTimeValue(exc, 'recurrence-id', opts.recurrenceIso, allDay, tzidOf(master));
     // Start/Ende der Instanz übernehmen (Dauer des Masters)
     const mStart = master.getFirstPropertyValue('dtstart') as unknown as ICalTime;
     const mEnd = master.getFirstPropertyValue('dtend') as unknown as ICalTime | null;
@@ -397,7 +487,58 @@ export function updateEventIcs(
   }
   applyEventInput(exc, input, { organizerEmail: opts.organizerEmail, isMaster: false });
   bumpSequence(exc);
+  ensureVtimezones(vcal);
   return vcal.toString();
+}
+
+/**
+ * Nach dem Verschieben einer ganzen Serie: geänderte bzw. gelöschte Einzeltermine
+ * (RECURRENCE-ID, EXDATE) um dieselbe Wandzeit-Differenz mitverschieben, damit sie
+ * weiter zu ihren Terminen passen. delta = null (ganztägig ↔ mit Uhrzeit): entfernen.
+ */
+function realignOverrides(vcal: Component, master: Component, deltaMs: number | null) {
+  if (deltaMs === 0) return;
+  const uid = master.getFirstPropertyValue('uid');
+  const shift = (t: ICalTime) => {
+    const c = t.clone();
+    c.addDuration(ICAL.Duration.fromSeconds(Math.round(deltaMs! / 1000)));
+    return c;
+  };
+  for (const v of vcal.getAllSubcomponents('vevent')) {
+    const rid = v.getFirstProperty('recurrence-id');
+    if (!rid || v.getFirstPropertyValue('uid') !== uid) continue;
+    if (deltaMs === null) vcal.removeSubcomponent(v);
+    else rid.setValue(shift(rid.getFirstValue() as unknown as ICalTime));
+  }
+  for (const p of master.getAllProperties('exdate')) {
+    if (deltaMs === null) master.removeProperty(p);
+    else p.setValues(p.getValues().map((t) => shift(t as unknown as ICalTime)));
+  }
+}
+
+/**
+ * Nach dem Kürzen einer Serie (UNTIL): Einzeltermin-Ausnahmen und EXDATEs hinter dem
+ * neuen Serienende entfernen, damit andere Programme keine verwaisten Termine zeigen.
+ */
+function dropOverridesAfterUntil(vcal: Component, master: Component) {
+  const rule = master.getFirstPropertyValue('rrule') as unknown as { until?: ICalTime | null } | null;
+  const until = rule?.until;
+  if (!until) return;
+  const tz = tzidOf(master);
+  const limit = until.isDate ? timeToDate(until).getTime() + 86_400_000 : timeToDate(until, tz).getTime() + 1;
+  const after = (t: ICalTime, tzid?: string) => timeToDate(t, tzid ?? tz).getTime() >= limit;
+  const uid = master.getFirstPropertyValue('uid');
+  for (const v of vcal.getAllSubcomponents('vevent')) {
+    const rid = v.getFirstProperty('recurrence-id');
+    if (!rid || v.getFirstPropertyValue('uid') !== uid) continue;
+    if (after(rid.getFirstValue() as unknown as ICalTime, tzidOf(v, 'recurrence-id'))) vcal.removeSubcomponent(v);
+  }
+  for (const p of master.getAllProperties('exdate')) {
+    const ptz = p.getParameter('tzid');
+    const keep = p.getValues().filter((t) => !after(t as unknown as ICalTime, typeof ptz === 'string' ? ptz : undefined));
+    if (!keep.length) master.removeProperty(p);
+    else if (keep.length !== p.getValues().length) p.setValues(keep);
+  }
 }
 
 /** Entfernt eine einzelne Instanz einer Serie (EXDATE + Ausnahme löschen). */
@@ -408,9 +549,12 @@ export function excludeOccurrence(ics: string, recurrenceIso: string): string {
   const exc = findException(vcal, master, recurrenceIso);
   if (exc) vcal.removeSubcomponent(exc);
   const allDay = (master.getFirstPropertyValue('dtstart') as unknown as ICalTime | null)?.isDate ?? false;
+  const tz = tzidOf(master);
+  const zoned = !allDay && tz ? isoToZonedTime(recurrenceIso, tz) : undefined;
   const p = new ICAL.Property('exdate');
   if (allDay) p.resetType('date');
-  p.setValue(isoToTime(recurrenceIso, allDay));
+  p.setValue(zoned ?? isoToTime(recurrenceIso, allDay));
+  if (zoned) p.setParameter('tzid', tz!);
   master.addProperty(p);
   bumpSequence(master);
   return vcal.toString();

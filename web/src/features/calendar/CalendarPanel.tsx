@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { addDays, format, isSameDay, isToday, isTomorrow, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { CalendarDays, ChevronLeft, ChevronRight, Maximize2, MapPin, Plus, Video, X } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Maximize2, MapPin, Plus, Repeat, Video, X } from 'lucide-react';
 import type { CalendarEvent } from '@kuvert/shared';
 import { Button, IconButton, Spinner } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
@@ -18,6 +18,7 @@ import { calKey, calKeyOf, useCalendars, useEvents } from './api';
 import { EventDetails } from './EventDetails';
 import { EventEditor, type EditorInit } from './EventEditor';
 import { MiniMonth } from './MiniMonth';
+import { isRecurring } from './series';
 import { CALENDAR_PANEL_ID, closeCalendarPanel } from './panel-store';
 import { eventColor, meetingLabel, parseEventDate } from './utils';
 import { HIDDEN_KEY, usePersistentSet } from './visibility';
@@ -189,8 +190,8 @@ export default function CalendarPanel() {
           calendar={calendarMap.get(calKey({ accountId: detail.accountId, calendarId: detail.calendarId }))}
           account={accountMap.get(detail.accountId)}
           onClose={() => setDetail(null)}
-          onEdit={() => {
-            setEditor({ event: detail });
+          onEdit={(ev, split) => {
+            setEditor({ event: ev, split });
             setDetail(null);
           }}
         />
@@ -234,7 +235,14 @@ function AgendaItem({ ev, day, now, color, onOpen }: { ev: CalendarEvent; day: D
       >
         <span className="mt-0.5 w-1 shrink-0 self-stretch rounded-full" style={{ backgroundColor: color }} />
         <div className="min-w-0 flex-1">
-          <div className={cn('truncate text-sm font-medium', cancelled && 'line-through')}>{ev.title || '(Ohne Titel)'}</div>
+          <div className="flex min-w-0 items-center gap-1">
+            <span className={cn('truncate text-sm font-medium', cancelled && 'line-through')}>{ev.title || '(Ohne Titel)'}</span>
+            {isRecurring(ev) && (
+              <span className="shrink-0 text-muted" title={ev.isException ? 'Einzeln geänderter Serientermin' : 'Serientermin'}>
+                <Repeat className="h-3 w-3" aria-label="Serientermin" />
+              </span>
+            )}
+          </div>
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
             <span className={cn('shrink-0 tabular-nums', running && 'font-semibold text-primary')}>{running ? `jetzt · bis ${format(end, 'HH:mm')}` : time}</span>
             {ev.location && (

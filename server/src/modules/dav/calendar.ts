@@ -15,6 +15,7 @@ import {
   buildNewTodo,
   excludeOccurrence,
   parseEvents,
+  parseMasterEvent,
   parseTodos,
   setPartstat,
   updateEventIcs,
@@ -141,6 +142,15 @@ export class DavCalendarProvider implements CalendarProvider, TasksProvider {
     const sorted = events.sort((a, b) => (a.start < b.start ? -1 : 1));
     const fromAnchor = hint?.start ? sorted.find((e) => e.start >= hint.start!.slice(0, 10)) : undefined;
     const ev = fromAnchor ?? sorted[0];
+    if (!ev) throw new NotFoundError('Termin');
+    return ev;
+  }
+
+  async getEvent(calendarId: string, eventId: string): Promise<CalendarEvent> {
+    const { url, rid } = this.splitId(eventId);
+    if (rid) return this.reloadEvent(calendarId, eventId, { start: rid });
+    const obj = await this.getObject(calendarId, url);
+    const ev = parseMasterEvent(obj.data, { accountId: this.accountId, calendarId, url: obj.url, etag: obj.etag, ownEmails: this.ownEmails() });
     if (!ev) throw new NotFoundError('Termin');
     return ev;
   }

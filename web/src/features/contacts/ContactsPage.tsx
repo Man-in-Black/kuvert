@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -8,9 +8,11 @@ import {
   AlertTriangle,
   BookUser,
   Briefcase,
+  Building2,
   Cake,
   ChevronLeft,
   Download,
+  ExternalLink,
   Globe,
   Mail,
   MapPin,
@@ -24,7 +26,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { AddressBook, Contact } from '@kuvert/shared';
-import { Avatar, Button, ColorDot, EmptyState, IconButton, Input, SidebarSheet, Spinner, useConfirm } from '@/components/ui';
+import { Avatar, Badge, Button, ColorDot, EmptyState, IconButton, Input, Select, SidebarSheet, Spinner, useConfirm } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { useAccountMap } from '@/lib/queries';
 import { cn } from '@/lib/utils';
@@ -52,6 +54,8 @@ export default function ContactsPage() {
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+  /** Filter auf eine Firma bzw. einen Kunden (nur in Adressbüchern von Kontaktquellen, z. B. ein CRM) */
+  const [company, setCompany] = useState('');
   const [editor, setEditor] = useState<{ contact?: Contact } | null>(null);
 
   // Mobil: Adressbücher als Schublade, Liste und Details nacheinander
@@ -67,9 +71,22 @@ export default function ContactsPage() {
   }, [search]);
 
   const { data, isLoading, isFetching, error } = useContactList(book, debounced);
+  const activeBook = book ? books.find((b) => b.accountId === book.accountId && b.id === book.addressBookId) : undefined;
+  /** Kundenfilter nur für Kontaktquellen ohne Mailkonto (z. B. ein CRM): dort ist die Firma der Kunde */
+  const companyFilter = !!activeBook?.sourceName;
+  const companies = useMemo(() => {
+    if (!companyFilter) return [];
+    const set = new Set<string>();
+    for (const c of data?.items ?? []) if (c.company?.trim()) set.add(c.company.trim());
+    return [...set].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
+  }, [companyFilter, data]);
+  const activeCompany = companyFilter && company ? company : '';
   const contacts = useMemo(
-    () => [...(data?.items ?? [])].sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'de', { sensitivity: 'base' })),
-    [data],
+    () =>
+      [...(data?.items ?? [])]
+        .filter((c) => !activeCompany || c.company?.trim() === activeCompany)
+        .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'de', { sensitivity: 'base' })),
+    [data, activeCompany],
   );
   const groups = useMemo(() => {
     const m = new Map<string, Contact[]>();
@@ -102,6 +119,7 @@ export default function ContactsPage() {
   const bookLabel = book ? (books.find((b) => b.accountId === book.accountId && b.id === book.addressBookId)?.name ?? 'Adressbuch') : 'Alle Kontakte';
   const pickBook = (sel: BookSelection | null) => {
     setBook(sel);
+    setCompany('');
     setNavOpen(false);
   };
   const newContact = () => {
@@ -208,6 +226,19 @@ export default function ContactsPage() {
           </div>
           {isFetching && <Spinner className="h-4 w-4" />}
         </div>
+        {companyFilter && companies.length > 1 && (
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+            <Building2 className="h-4 w-4 shrink-0 text-muted" />
+            <Select aria-label="Nach Kunde filtern" className="h-8 min-w-0 flex-1 text-sm" value={activeCompany} onChange={(e) => setCompany(e.target.value)}>
+              <option value="">Alle Kunden ({companies.length})</option>
+              {companies.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-auto">
           {noBooks ? (
             <EmptyState icon={<Users />} title="Kein Adressbuch verbunden">
@@ -224,7 +255,7 @@ export default function ContactsPage() {
           ) : error ? (
             <div className="p-4 text-sm text-danger">{errorMessage(error)}</div>
           ) : contacts.length === 0 ? (
-            <EmptyState icon={<Search />} title={debounced ? 'Keine Treffer' : 'Keine Kontakte'} />
+            <EmptyState icon={<Search />} title={debounced || activeCompany ? 'Keine Treffer' : 'Keine Kontakte'} />
           ) : (
             groups.map(([letter, list]) => (
               <div key={letter}>
@@ -244,7 +275,9 @@ export default function ContactsPage() {
                       <Avatar name={c.displayName} email={c.emails[0]?.address} size={34} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">{c.displayName || c.emails[0]?.address || '(ohne Namen)'}</span>
-                        <span className="block truncate text-xs text-muted">{c.emails[0]?.address || c.company || c.phones[0]?.number || ''}</span>
+                        <span className="block truncate text-xs text-muted">
+                          {companyFilter && !activeCompany && c.company ? c.company : c.emails[0]?.address || c.company || c.phones[0]?.number || ''}
+                        </span>
                       </span>
                       {!book && <ColorDot color={sourceOf(c.accountId)?.color} className="h-2 w-2" />}
                     </button>
@@ -254,7 +287,9 @@ export default function ContactsPage() {
             ))
           )}
         </div>
-        <div className="border-t border-border px-4 py-1.5 text-xs text-muted">{contacts.length} Kontakte</div>
+        <div className="border-t border-border px-4 py-1.5 text-xs text-muted">
+          {contacts.length} Kontakte{activeCompany && ` bei ${activeCompany}`}
+        </div>
       </section>
 
       {/* Details */}
@@ -275,6 +310,15 @@ export default function ContactsPage() {
             contact={current}
             origin={sourceOf(current.accountId)}
             book={books.find((b) => b.accountId === current.accountId && b.id === current.addressBookId)}
+            onFilterCompany={
+              companyFilter && current.company
+                ? () => {
+                    setCompany(current.company!.trim());
+                    // Mobil: zurück zur (gefilterten) Liste
+                    if (isMobile) setSelected(null);
+                  }
+                : undefined
+            }
             onEdit={() => setEditor({ contact: current })}
             onDeleted={() => setSelected(null)}
           />
@@ -324,16 +368,20 @@ function ContactDetail({
   contact: c,
   origin,
   book,
+  onFilterCompany,
   onEdit,
   onDeleted,
 }: {
   contact: Contact;
   origin?: Origin;
   book?: AddressBook;
+  /** Liste auf die Firma dieses Kontakts filtern (nur bei Kontaktquellen) */
+  onFilterCompany?: () => void;
   onEdit: () => void;
   onDeleted: () => void;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { confirm, dialog } = useConfirm();
   const [deleting, setDeleting] = useState(false);
   const readOnly = !!book?.readOnly;
@@ -378,6 +426,15 @@ function ContactDetail({
               {origin?.name}
               {book && <span>· {book.name}</span>}
             </div>
+            {!!c.tags?.length && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {c.tags.map((t) => (
+                  <Badge key={t} tone="info">
+                    {t}
+                  </Badge>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -394,6 +451,17 @@ function ContactDetail({
             <Button icon={<Pencil className="h-4 w-4" />} onClick={onEdit}>
               Bearbeiten
             </Button>
+          )}
+          {(c.links ?? []).map((l) =>
+            l.url.startsWith('/') ? (
+              <Button key={l.url} icon={<Building2 className="h-4 w-4" />} onClick={() => navigate(l.url)}>
+                {l.label}
+              </Button>
+            ) : (
+              <Button key={l.url} icon={<ExternalLink className="h-4 w-4" />} onClick={() => window.open(l.url, '_blank', 'noopener,noreferrer')}>
+                {l.label}
+              </Button>
+            ),
           )}
           <Button icon={<Download className="h-4 w-4" />} onClick={() => downloadVCard(c)}>
             vCard
@@ -434,8 +502,13 @@ function ContactDetail({
             );
           })}
           {(c.company || c.jobTitle) && (
-            <DetailRow icon={<Briefcase />} label="Organisation">
+            <DetailRow icon={<Briefcase />} label={onFilterCompany ? 'Kunde' : 'Organisation'}>
               {[c.company, c.department, c.jobTitle].filter(Boolean).join(' · ')}
+              {onFilterCompany && (
+                <button type="button" className="ml-2 text-xs text-primary hover:underline" onClick={onFilterCompany}>
+                  alle Ansprechpartner
+                </button>
+              )}
             </DetailRow>
           )}
           {birthday && (

@@ -124,3 +124,95 @@ export function addDays(dateIso: string, days: number): string {
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days));
   return d.toISOString().slice(0, 10);
 }
+
+/**
+ * Zeitpunkt → Wandzeit in einer Zone (ohne Zonenbezug, für DTSTART;TZID=…).
+ * undefined, wenn die Zone nicht aufgelöst werden kann.
+ */
+export function isoToZonedTime(iso: string, tzid: string | undefined): ICalTime | undefined {
+  const tz = normalizeTzid(tzid);
+  const d = new Date(iso);
+  if (!tz || Number.isNaN(d.getTime())) return undefined;
+  if (tz === 'UTC') return undefined;
+  const local = new Date(d.getTime() + zoneOffsetMinutes(d.getTime(), tz) * 60000);
+  return ICAL.Time.fromData({
+    year: local.getUTCFullYear(),
+    month: local.getUTCMonth() + 1,
+    day: local.getUTCDate(),
+    hour: local.getUTCHours(),
+    minute: local.getUTCMinutes(),
+    second: local.getUTCSeconds(),
+    isDate: false,
+  });
+}
+
+/** Wandzeit-Komponenten als Millisekunden (Zone wird ignoriert) – für Verschiebungen „um x Stunden/Tage“ */
+export function wallMs(t: ICalTime): number {
+  return Date.UTC(t.year, t.month - 1, t.day, t.isDate ? 0 : t.hour, t.isDate ? 0 : t.minute, t.isDate ? 0 : t.second);
+}
+
+export interface ZoneRule {
+  /** 'daylight' (Sommerzeit) oder 'standard' */
+  kind: 'daylight' | 'standard';
+  /** Offsets in Minuten vor/nach dem Wechsel */
+  from: number;
+  to: number;
+  /** Monat 1–12, Wochentag 0=So, n-ter Wochentag (−1 = letzter), Wandzeit vor dem Wechsel */
+  month: number;
+  weekday: number;
+  nth: number;
+  hour: number;
+  minute: number;
+}
+
+/**
+ * Jährliche Zeitumstellungen einer Zone als Regeln (für eine VTIMEZONE).
+ * Leeres Array = keine Sommerzeit; offset = aktueller Standard-Offset.
+ */
+export function zoneRules(tzid: string, year = new Date().getUTCFullYear()): { offset: number; rules: ZoneRule[] } | undefined {
+  const tz = normalizeTzid(tzid);
+  if (!tz) return undefined;
+  const rules: ZoneRule[] = [];
+  const DAY = 86_400_000;
+  const end = Date.UTC(year + 1, 0, 1);
+  let prev = zoneOffsetMinutes(Date.UTC(year, 0, 1), tz);
+  for (let t = Date.UTC(year, 0, 1); t < end; t += DAY) {
+    const next = zoneOffsetMinutes(t + DAY, tz);
+    if (next === prev) continue;
+    let lo = t;
+    let hi = t + DAY;
+    while (hi - lo > 60_000) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (zoneOffsetMinutes(mid, tz) === prev) lo = mid;
+      else hi = mid;
+    }
+    const at = Math.ceil((lo + 1) / 60_000) * 60_000;
+    const wall = new Date(at + prev * 60_000); // Wandzeit vor dem Wechsel
+    const day = wall.getUTCDate();
+    const daysInMonth = new Date(Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth() + 1, 0)).getUTCDate();
+    rules.push({
+      kind: next > prev ? 'daylight' : 'standard',
+      from: prev,
+      to: next,
+      month: wall.getUTCMonth() + 1,
+      weekday: wall.getUTCDay(),
+      nth: day + 7 > daysInMonth ? -1 : Math.ceil(day / 7),
+      hour: wall.getUTCHours(),
+      minute: wall.getUTCMinutes(),
+    });
+    prev = next;
+  }
+  const standard = rules.find((r) => r.kind === 'standard')?.to ?? prev;
+  return { offset: standard, rules: rules.length === 2 ? rules : [] };
+}
+
+/** Datum des n-ten Wochentags eines Monats (n = −1: letzter) */
+export function nthWeekdayOfMonth(year: number, month: number, weekday: number, nth: number): number {
+  if (nth > 0) {
+    const first = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+    return 1 + ((weekday - first + 7) % 7) + (nth - 1) * 7;
+  }
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const lastWd = new Date(Date.UTC(year, month - 1, lastDay)).getUTCDay();
+  return lastDay - ((lastWd - weekday + 7) % 7);
+}
