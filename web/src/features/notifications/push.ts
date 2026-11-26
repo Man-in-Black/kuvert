@@ -39,6 +39,12 @@ export async function pushActiveHere(): Promise<boolean> {
  * gibt es den Notification-Konstruktor nicht; ein Klick öffnet dann `url` (siehe sw.js).
  */
 export async function showSystemNotification(title: string, opts: NotificationOptions, url: string, onClick?: () => void): Promise<boolean> {
+  // Desktop-App ab 1.1.0: native Benachrichtigung des Systems (zuverlässiger als die des Browsers in Electron);
+  // der Klick kommt über desktop.onNavigate zurück (NotificationService)
+  if (desktop?.notify) {
+    desktop.notify({ title, body: opts.body, tag: opts.tag, url, requireInteraction: opts.requireInteraction });
+    return true;
+  }
   if (!notificationsSupported() || Notification.permission !== 'granted') return false;
   const options: NotificationOptions = { icon: NOTIFICATION_ICON, badge: NOTIFICATION_BADGE, ...opts };
   try {

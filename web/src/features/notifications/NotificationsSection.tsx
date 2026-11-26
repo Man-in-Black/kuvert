@@ -8,6 +8,7 @@ import { useAppInfo, useFeature, useSettings, useUpdateSettings } from '@/lib/qu
 import { Badge, Button, Switch } from '@/components/ui';
 import { Card, HelpBox, SavedIndicator, SectionHeader, SettingRow } from '@/features/settings/ui';
 import { currentSubscription, permission, playBeep, pushSupported, requestPermission, showSystemNotification, subscribePush, unsubscribePush } from './push';
+import { setUnseenEnabled, unseenCategories, useUnseenOff } from './unseen';
 
 const PERMISSION_LABEL: Record<string, { text: string; color: string }> = {
   granted: { text: 'Erlaubt', color: 'var(--k-success)' },
@@ -118,6 +119,8 @@ export function NotificationsSection() {
         <p className="pt-3 text-xs text-muted">Pro Konto lassen sich Mail-Benachrichtigungen unter „Konten → Bearbeiten" abschalten.</p>
       </Card>
 
+      <UnseenCard />
+
       {/* Desktop-App: kein Web Push – sie läuft im Infobereich weiter und benachrichtigt direkt */}
       {pushFeature && !desktop && (
         <Card title="Push auf diesem Gerät" description="Benachrichtigungen auch dann, wenn kein Kuvert-Tab geöffnet ist (z. B. als installierte App).">
@@ -141,5 +144,28 @@ export function NotificationsSection() {
         </Card>
       )}
     </div>
+  );
+}
+
+/** Welche Arten im Hintergrund mitzählen – Zahl im Tab-Titel, in der Desktop-App der rote Punkt (je Gerät) */
+function UnseenCard() {
+  const off = useUnseenOff();
+  const { data: app } = useAppInfo();
+  const list = unseenCategories().filter((c) => !c.feature || !!app?.features?.[c.feature]);
+  return (
+    <Card
+      title={desktop ? 'Roter Punkt im Infobereich' : 'Zähler im Tab-Titel'}
+      description={
+        desktop
+          ? 'Was den roten Punkt am Kuvert-Symbol auslöst, solange Kuvert im Hintergrund ist. Gilt für dieses Gerät.'
+          : 'Was im Tab-Titel als „(3)" mitzählt, solange Kuvert im Hintergrund ist. Gilt für diesen Browser.'
+      }
+    >
+      {list.map((c) => (
+        <SettingRow key={c.id} label={c.label}>
+          <Switch checked={!off.includes(c.id)} onChange={(v) => setUnseenEnabled(c.id, v)} />
+        </SettingRow>
+      ))}
+    </Card>
   );
 }

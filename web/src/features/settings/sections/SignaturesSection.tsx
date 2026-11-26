@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils';
 import { RichEditor } from '@/components/editor/RichEditor';
 import { Badge, Button, Checkbox, EmptyState, Field, Input, Select, Spinner, Tabs, Textarea, useConfirm } from '@/components/ui';
 import { HelpBox, SectionHeader } from '../ui';
+import { buildMailSrcDoc } from '@/features/mail/sanitize';
+import { rawSignatureHtml } from '@/features/mail/compose/build';
 
 type Draft = Omit<Signature, 'id'> & { id?: string };
 
@@ -229,10 +231,12 @@ export function SignaturesSection() {
                   <Field label="Vorschau">
                     <iframe
                       title="Signaturvorschau"
-                      sandbox=""
-                      srcDoc={`<!doctype html><html><head><meta charset="utf-8"><style>body{margin:8px;font-family:Arial,sans-serif;font-size:14px;color:#111;background:#fff}</style></head><body>${
-                        /<[a-z][\s\S]*>/i.test(draft.content) ? draft.content : `<pre style="font-family:inherit;white-space:pre-wrap">${draft.content.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)}</pre>`
-                      }</body></html>`}
+                      // allow-same-origin (ohne Skripte) wie beim MailFrame – sonst lädt die Emoji-Schrift nicht
+                      sandbox="allow-same-origin"
+                      srcDoc={buildMailSrcDoc(rawSignatureHtml(draft.content), {
+                        allowRemote: true,
+                        extraCss: 'body { padding: 8px; font-family: Arial, sans-serif; color: #111; }',
+                      })}
                       className="h-64 w-full rounded-md border border-border bg-white"
                     />
                   </Field>

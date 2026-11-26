@@ -4,6 +4,7 @@
  */
 import DOMPurify from 'dompurify';
 import { escapeHtml } from '@/lib/utils';
+import { EMOJI_FONT_FACES, EMOJI_FONT_STACK, wrapEmoji } from '@/lib/emoji-font';
 
 const FORBID_TAGS = ['script', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'form', 'input', 'button', 'select', 'textarea', 'base', 'meta', 'link', 'noscript', 'portal'];
 const FORBID_ATTR = ['action', 'formaction', 'srcdoc', 'ping'];
@@ -89,9 +90,12 @@ export function buildMailSrcDoc(html: string, opts: MailDocOptions): string {
     });
   }
 
+  wrapEmoji(doc, 'kuvert-emoji');
+
   const imgSrc = opts.allowRemote ? "'self' data: blob: https: http:" : "'self' data: blob:";
   const styleSrc = opts.allowRemote ? "'unsafe-inline' https: http:" : "'unsafe-inline'";
-  const fontSrc = opts.allowRemote ? 'data: https:' : 'data:';
+  // 'self' für die mitgelieferte Emoji-Schrift
+  const fontSrc = opts.allowRemote ? "'self' data: https:" : "'self' data:";
   const csp = `default-src 'none'; img-src ${imgSrc}; style-src ${styleSrc}; font-src ${fontSrc}; media-src ${imgSrc};`;
 
   const head = doc.head;
@@ -117,6 +121,8 @@ export function buildMailSrcDoc(html: string, opts: MailDocOptions): string {
     pre { white-space: pre-wrap; }
     blockquote { margin: 0 0 0 .8ex; border-left: 2px solid #d0d7de; padding-left: 1ex; color: #57606a; }
     a { color: #0969da; }
+    ${EMOJI_FONT_FACES}
+    .kuvert-emoji { font-family: ${EMOJI_FONT_STACK} !important; }
     ${opts.extraCss ?? ''}
   `;
   head.prepend(style);

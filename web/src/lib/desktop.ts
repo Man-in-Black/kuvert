@@ -13,6 +13,21 @@ export interface KuvertDesktop {
   onMailto(cb: (raw: string) => void): void;
   isDefaultMailClient(): Promise<boolean>;
   setDefaultMailClient(): Promise<boolean>;
+  /** Native Systembenachrichtigung (ab App 1.1.0); ein Klick holt das Fenster nach vorn und meldet `url` über onNavigate */
+  notify?(n: DesktopNotification): void;
+  /** Pfad in Kuvert öffnen, nachdem eine Benachrichtigung angeklickt wurde (ab App 1.1.0) */
+  onNavigate?(cb: (url: string) => void): void;
+}
+
+export interface DesktopNotification {
+  title: string;
+  body?: string;
+  /** Gleiches Tag ersetzt die vorige Benachrichtigung */
+  tag?: string;
+  /** Pfad in Kuvert, z. B. /chat/123 */
+  url?: string;
+  /** Bleibt stehen, bis sie weggeklickt wird (Termine) */
+  requireInteraction?: boolean;
 }
 
 export const desktop: KuvertDesktop | undefined =

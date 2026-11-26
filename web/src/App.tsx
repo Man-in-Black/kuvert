@@ -3,6 +3,7 @@ import { BrowserRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import '@fontsource-variable/inter';
+import '@fontsource/noto-color-emoji';
 import type { UserSettings } from '@kuvert/shared';
 import { ApiError, setUnauthorizedHandler } from '@/lib/api';
 import { connectEvents, disconnectEvents, installCrossWindowSync, installQueryInvalidation } from '@/lib/events';

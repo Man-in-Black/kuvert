@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { mentionsHandle, type ChatConversation, type ChatUser } from '@kuvert/shared';
 import { useServerEvent } from '@/lib/events';
 import { playBeep, pushActiveHere, showSystemNotification } from '@/features/notifications/push';
+import { bumpUnseen } from '@/features/notifications/unseen';
 import {
   activeChat,
   applyNewMessage,
@@ -39,6 +40,8 @@ export function ChatService() {
 
   const notify = (conversationId: string, title: string, body: string) => {
     const url = `/chat/${conversationId}`;
+    // Zählt im Fenstertitel mit – in der Desktop-App der rote Punkt im Infobereich
+    bumpUnseen('chat');
     if (document.hidden) {
       // Mit Web Push auf diesem Gerät zeigt der Service Worker die Nachricht an (sonst doppelt)
       void pushActiveHere().then((push) => {

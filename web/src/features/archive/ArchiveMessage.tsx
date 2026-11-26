@@ -10,6 +10,7 @@ import type { ArchiverEmailDetail, UploadInfo } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
 import { useSettings } from '@/lib/queries';
 import { escapeHtml, formatSize, parseAddressList, textToHtml } from '@/lib/utils';
+import { EMOJI_FONT_FACES, EMOJI_FONT_STACK, wrapEmoji } from '@/lib/emoji-font';
 import { openCompose } from '@/features/mail/compose-api';
 import { MailFrame } from '@/features/mail/components/MailFrame';
 import { Avatar, Badge, Button, EmptyState, IconButton, Skeleton } from '@/components/ui';
@@ -17,7 +18,7 @@ import { attachmentUrl, emlUrl, formatArchiveDate, useArchiverEmail } from './ap
 
 /* ───────────────────────────── HTML-Aufbereitung ───────────────────────────── */
 
-function prepareHtml(html: string, allowRemote: boolean): { html: string; blocked: number } {
+function prepareHtml(html: string, allowRemote: boolean, forDisplay = true): { html: string; blocked: number } {
   let blocked = 0;
   const clean = DOMPurify.sanitize(html, {
     WHOLE_DOCUMENT: false,
@@ -45,13 +46,15 @@ function prepareHtml(html: string, allowRemote: boolean): { html: string; blocke
     a.setAttribute('target', '_blank');
     a.setAttribute('rel', 'noopener noreferrer');
   });
+  // Nur für die Anzeige – beim Weiterleiten soll das HTML unverändert bleiben
+  if (forDisplay) wrapEmoji(doc, 'kuvert-emoji');
   return { html: doc.body.innerHTML, blocked };
 }
 
 function frameDocument(body: string, allowRemote: boolean): string {
   const img = allowRemote ? "img-src data: https: http: 'self'" : "img-src data: 'self'";
   return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src data:; ${img}">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src 'self' data:; ${img}">
 <base target="_blank">
 <style>
   html,body{margin:0;padding:0;background:#fff;color:#111827;}
@@ -62,6 +65,8 @@ function frameDocument(body: string, allowRemote: boolean): string {
   pre{white-space:pre-wrap;}
   table{max-width:100%;}
   a{color:#4f46e5;}
+  ${EMOJI_FONT_FACES}
+  .kuvert-emoji{font-family:${EMOJI_FONT_STACK} !important;}
 </style></head><body>${body}</body></html>`;
 }
 
@@ -106,7 +111,7 @@ export function ArchiveMessage({ id, onClose }: { id: number; onClose?: () => vo
   }
 
   const quoteHtml = () => {
-    const body = msg.htmlBody?.trim() ? prepareHtml(msg.htmlBody, false).html : textToHtml(msg.textBody ?? '');
+    const body = msg.htmlBody?.trim() ? prepareHtml(msg.htmlBody, false, false).html : textToHtml(msg.textBody ?? '');
     return `<p></p><p>Am ${escapeHtml(formatArchiveDate(msg.sentDate, true))} schrieb ${escapeHtml(msg.from)}:</p><blockquote>${body}</blockquote>`;
   };
   const strip = (s: string) => s.replace(/^((re|aw|fw|fwd|wg)\s*:\s*)+/i, '');
