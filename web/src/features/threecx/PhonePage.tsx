@@ -28,7 +28,7 @@ import type { ThreeCxCallDirection, ThreeCxCallLogEntry, ThreeCxColleague, Three
 import { api, errorMessage } from '@/lib/api';
 import { useFeature } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import { Avatar, Badge, Button, Card, EmptyState, IconButton, Input, PageHeader, Select, Skeleton, Tabs } from '@/components/ui';
+import { Avatar, Button, Card, EmptyState, IconButton, Input, PageHeader, Select, Skeleton, Tabs } from '@/components/ui';
 import { openCompose } from '@/features/mail/compose-api';
 import { callViaThreeCx, tk, useActiveCalls, useCallLog, useColleagues, useThreeCxContacts, useThreeCxMe } from './api';
 
@@ -461,67 +461,56 @@ function ContactList({ q, onCall }: { q: string; onCall: (n: string) => Promise<
 
 /* ───────────────────────────── Kollegen ───────────────────────────── */
 
-function ColleagueStatus({ c }: { c: ThreeCxColleague }) {
-  if (c.onCall) return <Badge tone="danger">telefoniert</Badge>;
-  if (!c.registered) return <Badge tone="neutral">abgemeldet</Badge>;
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted">
-      <span className={cn('h-2 w-2 rounded-full', PROFILE_DOT[c.profile ?? ''] ?? 'bg-muted')} />
-      {profileLabel(c.profile)}
-    </span>
-  );
+/** Status als kurzer Text mit Farbe: telefoniert > abgemeldet > Anwesenheitsprofil */
+function statusText(c: ThreeCxColleague): { label: string; className: string } {
+  if (c.onCall) return { label: 'telefoniert', className: 'text-danger' };
+  if (!c.registered) return { label: 'abgemeldet', className: 'text-subtle' };
+  return { label: profileLabel(c.profile), className: 'text-muted' };
 }
 
-/** Farbe des Punkts am Avatar: telefoniert > abgemeldet > Anwesenheitsprofil */
 function presenceDot(c: ThreeCxColleague) {
   if (c.onCall) return 'bg-danger';
   if (!c.registered) return 'bg-subtle';
   return PROFILE_DOT[c.profile ?? ''] ?? 'bg-muted';
 }
 
+/** Kompakte Kachel: Klick ruft die Durchwahl an, rechts optional Mobil */
 function ColleagueTile({ c, onCall }: { c: ThreeCxColleague; onCall: (n: string) => Promise<void> }) {
+  const st = statusText(c);
   return (
     <li
       className={cn(
-        'group relative flex flex-col rounded-2xl border bg-surface shadow-card transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-soft',
+        'flex items-center rounded-xl border bg-surface transition-colors hover:border-primary/40 hover:bg-hover',
         c.onCall ? 'border-danger/40' : 'border-border',
       )}
     >
       <button
         type="button"
-        className="flex flex-1 flex-col items-center px-3 pb-3 pt-4 text-center"
+        className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pl-2.5 pr-1 text-left"
         title={`${c.name} anrufen (${c.extension})`}
         onClick={() => void onCall(c.extension)}
       >
-        <span className={cn('relative', !c.registered && !c.onCall && 'opacity-60')}>
-          <Avatar name={c.name} email={c.email ?? undefined} size={52} />
-          <span className={cn('absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full ring-2 ring-surface', presenceDot(c))} />
+        <span className={cn('relative shrink-0', !c.registered && !c.onCall && 'opacity-60')}>
+          <Avatar name={c.name} email={c.email ?? undefined} size={32} />
+          <span className={cn('absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-surface', presenceDot(c))} />
         </span>
-        <span className="mt-2.5 line-clamp-2 text-sm font-medium leading-snug">{c.name}</span>
-        <span className="mt-0.5 text-xs text-muted">Durchwahl {c.extension}</span>
-        <span className="mt-2">
-          <ColleagueStatus c={c} />
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium leading-tight">{c.name}</span>
+          <span className="block truncate text-xs leading-tight">
+            <span className="text-muted">{c.extension}</span>
+            <span className="text-subtle"> · </span>
+            <span className={st.className}>{st.label}</span>
+          </span>
         </span>
       </button>
-      <div className="flex border-t border-border text-xs">
-        <button
-          type="button"
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-bl-2xl py-2 text-primary hover:bg-primary-soft"
-          onClick={() => void onCall(c.extension)}
-        >
-          <PhoneCall className="h-3.5 w-3.5" /> Anrufen
-        </button>
-        {c.mobile && (
-          <button
-            type="button"
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-br-2xl border-l border-border py-2 text-muted hover:bg-hover hover:text-fg"
-            title={`Mobil anrufen (${c.mobile})`}
-            onClick={() => void onCall(c.mobile!)}
-          >
-            <Smartphone className="h-3.5 w-3.5" /> Mobil
-          </button>
-        )}
-      </div>
+      {c.mobile && (
+        <IconButton size="icon-sm" label={`Mobil anrufen (${c.mobile})`} onClick={() => void onCall(c.mobile!)}>
+          <Smartphone className="h-3.5 w-3.5" />
+        </IconButton>
+      )}
+      <IconButton size="icon-sm" className="mr-1.5" label={`${c.name} anrufen (${c.extension})`} onClick={() => void onCall(c.extension)}>
+        <PhoneCall className="h-3.5 w-3.5" />
+      </IconButton>
     </li>
   );
 }
@@ -540,7 +529,7 @@ function ColleagueList({ q, onCall }: { q: string; onCall: (n: string) => Promis
     );
   }
   return (
-    <ul className="grid grid-cols-[repeat(auto-fill,minmax(12.5rem,1fr))] gap-3">
+    <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
       {list.map((c) => (
         <ColleagueTile key={c.extension} c={c} onCall={onCall} />
       ))}
