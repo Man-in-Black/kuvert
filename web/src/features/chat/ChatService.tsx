@@ -45,6 +45,9 @@ export function ChatService() {
         if (!push) void showSystemNotification(title, { body, tag: `chat-${conversationId}` }, url, () => navigate(url));
       });
     } else {
+      // Fenster sichtbar, aber nicht im Fokus (anderes Programm, zweiter Monitor): zusätzlich als
+      // Systembenachrichtigung – den Toast allein würde man dort übersehen (wie bei Terminen)
+      if (!document.hasFocus()) void showSystemNotification(title, { body, tag: `chat-${conversationId}` }, url, () => navigate(url));
       toast(title, { description: body, action: { label: 'Öffnen', onClick: () => navigate(url) }, id: `chat-${conversationId}` });
     }
     if (settings.sound) playBeep();
@@ -58,8 +61,10 @@ export function ChatService() {
     const viewing = activeChat.id === e.conversationId && !document.hidden;
     if (!applyNewMessage(qc, m, me, !viewing)) void qc.invalidateQueries({ queryKey: chatKeys.conversations });
 
+    // Offene Unterhaltung in einem Fenster ohne Fokus meldet sich trotzdem – sonst bemerkt man sie nicht
+    const looking = viewing && document.hasFocus();
     // Anruf-Beiträge melden sich über chat.call (Klingeln), nicht als Nachricht
-    if (m.kind !== 'text' || m.call || !m.senderId || m.senderId === me || viewing || !settings.notify) return;
+    if (m.kind !== 'text' || m.call || !m.senderId || m.senderId === me || looking || !settings.notify) return;
     const conv = qc.getQueryData<ChatConversation[]>(chatKeys.conversations)?.find((c) => c.id === e.conversationId);
     if (conv?.muted) return;
     // Gruppen/Kanäle aus Mattermost/Talk: nur bei Erwähnung (sonst würde jeder Kanal-Beitrag melden)
@@ -99,6 +104,7 @@ export function ChatService() {
         if (!push) void showSystemNotification(title, { body: 'Zum Beitreten öffnen', tag: toastId }, url, () => navigate(url));
       });
     } else {
+      if (!document.hasFocus()) void showSystemNotification(title, { body: 'Zum Beitreten öffnen', tag: toastId }, url, () => navigate(url));
       toast(title, {
         id: toastId,
         description: `Der Anruf läuft in ${conv?.source?.label ?? 'Mattermost'}.`,

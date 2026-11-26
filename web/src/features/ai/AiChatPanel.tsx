@@ -4,18 +4,18 @@
  * Server das Postfach und gibt die gefundenen Mails als Quellen mit.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, ArrowUp, Copy, History, Mail, MessagesSquare, PenSquare, Pencil, RefreshCw, Reply, Search, Sparkles, Square, SquarePen, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ArrowUp, Copy, History, Mail, MessagesSquare, Mic, PenSquare, Pencil, RefreshCw, Reply, Search, Sparkles, Square, SquarePen, Trash2, X } from 'lucide-react';
 import { isToday, isYesterday, subDays } from 'date-fns';
-import type { AiChatSource, AiChatSummary, AiStatus } from '@kuvert/shared';
+import type { AiChatContext, AiChatSource, AiChatSummary, AiStatus } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
 import { useSettings } from '@/lib/queries';
 import { cn, displayAddress, formatListDate } from '@/lib/utils';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { Spinner, useConfirm } from '@/components/ui';
+import { PinPanelButton, SidePanel } from '@/layout/SidePanel';
 import { markdownToHtml } from '@/features/chat/markdown';
 import { useMailActions } from '@/features/mail/actions';
 import { fetchMessage } from '@/features/mail/api';
@@ -41,7 +41,7 @@ import {
   type AiChatSession,
 } from './chat-store';
 
-const SUGGESTIONS: Record<'search' | 'global' | 'message' | 'conversation', string[]> = {
+const SUGGESTIONS: Record<'search' | 'global' | 'message' | 'conversation' | 'meeting', string[]> = {
   search: [
     'Welche wichtigen Mails habe ich diese Woche bekommen?',
     'Was ist der letzte Stand zum Thema Angebot?',
@@ -56,12 +56,16 @@ const SUGGESTIONS: Record<'search' | 'global' | 'message' | 'conversation', stri
   ],
   message: ['Fasse die Mail kurz zusammen.', 'Was wird von mir erwartet?', 'Gibt es Fristen oder Termine?', 'Entwirf eine freundliche Antwort.'],
   conversation: ['Fasse den Verlauf zusammen.', 'Welche Punkte sind noch offen?', 'Wer hat was zugesagt?', 'Entwirf eine Antwort auf die letzte Nachricht.'],
+  meeting: ['Was wurde vereinbart?', 'Welche Aufgaben habe ich übernommen?', 'Entwirf eine Folge-Mail an die Teilnehmer.', 'Was ist noch offen?'],
 };
+
+const CONTEXT_ICON = { message: Mail, conversation: MessagesSquare, meeting: Mic } as const;
+const CONTEXT_LABEL = { message: 'E-Mail', conversation: 'Unterhaltung', meeting: 'Gespräch' } as const;
 
 export function AiChatService() {
   const { open } = useAiChat();
   if (!open) return null;
-  return createPortal(<AiChatPanel />, document.body);
+  return <AiChatPanel />;
 }
 
 function AiChatPanel() {
@@ -118,19 +122,7 @@ function AiChatPanel() {
   };
 
   return (
-    <aside
-      className={cn(
-        'fixed z-40 flex animate-slide-in-right flex-col border-border bg-surface shadow-pop',
-        mobile ? 'inset-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]' : 'inset-y-0 right-0 w-[440px] max-w-[100vw] border-l',
-      )}
-      role="complementary"
-      aria-label="KI-Chat"
-      onKeyDown={(e) => {
-        // Dialoge (Portal) liegen im React-Baum darunter, aber nicht im Panel
-        if (!e.currentTarget.contains(e.target as Node)) return;
-        if (e.key === 'Escape' && !busy) closeAiChat();
-      }}
-    >
+    <SidePanel id="ai-chat" label="KI-Chat" defaultWidth={440} onClose={closeAiChat} canClose={!busy}>
       {/* Kopf */}
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-soft text-primary">
@@ -169,7 +161,8 @@ function AiChatPanel() {
         >
           <SquarePen className="h-4 w-4" />
         </HeaderButton>
-        <HeaderButton label="Schließen (Esc)" onClick={closeAiChat}>
+        <PinPanelButton id="ai-chat" />
+        <HeaderButton label="Schließen" onClick={closeAiChat}>
           <X className="h-4 w-4" />
         </HeaderButton>
       </header>
@@ -182,9 +175,9 @@ function AiChatPanel() {
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         {session.target ? (
           <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full bg-primary-soft py-1 pl-2.5 pr-1 text-xs text-primary">
-            {session.target.context.kind === 'conversation' ? <MessagesSquare className="h-3.5 w-3.5 shrink-0" /> : <Mail className="h-3.5 w-3.5 shrink-0" />}
+            <ContextIcon kind={session.target.context.kind} />
             <span className="truncate" title={session.target.context.title}>
-              {session.target.context.kind === 'conversation' ? 'Unterhaltung' : 'E-Mail'}: {session.target.context.title || '(ohne Betreff)'}
+              {CONTEXT_LABEL[session.target.context.kind]}: {session.target.context.title || '(ohne Betreff)'}
             </span>
             <button
               type="button"
@@ -263,7 +256,7 @@ function AiChatPanel() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             rows={1}
-            placeholder={kind === 'global' ? (searching ? 'Frag etwas zu deinem Postfach …' : 'Frag die KI …') : kind === 'message' ? 'Frag etwas zu dieser Mail …' : 'Frag etwas zu dieser Unterhaltung …'}
+            placeholder={kind === 'global' ? (searching ? 'Frag etwas zu deinem Postfach …' : 'Frag die KI …') : kind === 'message' ? 'Frag etwas zu dieser Mail …' : kind === 'meeting' ? 'Frag etwas zu diesem Gespräch …' : 'Frag etwas zu dieser Unterhaltung …'}
             className="max-h-[180px] min-h-[24px] flex-1 resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-subtle"
           />
           {busy ? (
@@ -293,7 +286,7 @@ function AiChatPanel() {
       </div>
         </>
       )}
-    </aside>
+    </SidePanel>
   );
 }
 
@@ -316,7 +309,12 @@ function HeaderButton({ label, onClick, disabled, active, children }: { label: s
   );
 }
 
-function EmptyChat({ kind, searching, onPick }: { kind: 'global' | 'message' | 'conversation'; searching: boolean; onPick: (s: string) => void }) {
+function ContextIcon({ kind }: { kind: AiChatContext['kind'] }) {
+  const Icon = CONTEXT_ICON[kind];
+  return <Icon className="h-3.5 w-3.5 shrink-0" />;
+}
+
+function EmptyChat({ kind, searching, onPick }: { kind: 'global' | AiChatContext['kind']; searching: boolean; onPick: (s: string) => void }) {
   const list = SUGGESTIONS[kind === 'global' && searching ? 'search' : kind];
   return (
     <div className="flex h-full flex-col items-center justify-center px-4 text-center">
@@ -331,7 +329,9 @@ function EmptyChat({ kind, searching, onPick }: { kind: 'global' | 'message' | '
             : 'Frag die KI alles Mögliche – alles läuft über dein lokales Sprachmodell.'
           : kind === 'message'
             ? 'Die geöffnete Mail ist der Kontext für deine Fragen.'
-            : 'Der ganze Verlauf ist der Kontext für deine Fragen.'}
+            : kind === 'meeting'
+              ? 'Zusammenfassung, Aufgaben und Transkript des Gesprächs sind der Kontext für deine Fragen.'
+              : 'Der ganze Verlauf ist der Kontext für deine Fragen.'}
       </p>
       <div className="mt-4 flex w-full flex-col gap-1.5">
         {list.map((s) => (
@@ -564,7 +564,7 @@ function ChatHistory({ currentId, onBack }: { currentId: string; onBack: () => v
             <div key={g.label} className="mb-2">
               <div className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-subtle">{g.label}</div>
               {g.items.map((c) => {
-                const Icon = c.kind === 'conversation' ? MessagesSquare : c.kind === 'message' ? Mail : Sparkles;
+                const Icon = c.kind === 'global' ? Sparkles : CONTEXT_ICON[c.kind];
                 const current = c.id === currentId;
                 return (
                   <div key={c.id} className={cn('group/item flex items-center gap-2 rounded-lg px-2 py-1.5', current ? 'bg-primary-soft' : 'hover:bg-hover')}>

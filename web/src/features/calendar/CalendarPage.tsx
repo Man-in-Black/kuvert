@@ -31,6 +31,7 @@ import { EventDetails } from './EventDetails';
 import { EventEditor, type EditorInit } from './EventEditor';
 import { MiniMonth } from './MiniMonth';
 import { eventColor, toDateInput } from './utils';
+import { COLLAPSED_KEY, HIDDEN_KEY, usePersistentSet } from './visibility';
 import './calendar.css';
 
 type ViewName = UserSettings['calendarView'];
@@ -59,34 +60,6 @@ const MODE_TABS: { value: UserSettings['calendarMode']; label: ReactNode }[] = [
     ),
   },
 ];
-
-const HIDDEN_KEY = 'kuvert.calendar.hidden';
-const COLLAPSED_KEY = 'kuvert.calendar.collapsedAccounts';
-
-function usePersistentSet(key: string) {
-  const [set, setSet] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(key) ?? '[]') as string[]);
-    } catch {
-      return new Set();
-    }
-  });
-  const update = useCallback(
-    (fn: (s: Set<string>) => void) =>
-      setSet((prev) => {
-        const next = new Set(prev);
-        fn(next);
-        try {
-          localStorage.setItem(key, JSON.stringify([...next]));
-        } catch {
-          /* Speicher nicht verfügbar */
-        }
-        return next;
-      }),
-    [key],
-  );
-  return [set, update] as const;
-}
 
 interface RangeState {
   start: string;

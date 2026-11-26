@@ -23,7 +23,7 @@ export function ChatSettingsSection() {
       <SectionHeader title="Chat" description="Benachrichtigungen, Bedienung und verbundene Dienste des Team-Chats." actions={<SavedIndicator trigger={saved} />} />
       <div className="space-y-5">
         <Card title="Benachrichtigungen">
-          <SettingRow label="Bei neuen Nachrichten benachrichtigen" hint="Hinweis im offenen Tab, Desktop-Benachrichtigung im Hintergrund und Web Push bei geschlossenem Tab">
+          <SettingRow label="Bei neuen Nachrichten benachrichtigen" hint="Hinweis im offenen Tab, Desktop-Benachrichtigung bei verborgenem oder nicht aktivem Fenster und Web Push bei geschlossenem Tab">
             <Switch checked={settings.notify} onChange={(v) => set({ notify: v })} />
           </SettingRow>
           <SettingRow label="Ton abspielen" hint="Kurzer Signalton bei neuen Nachrichten">

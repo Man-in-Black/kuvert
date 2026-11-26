@@ -5,7 +5,7 @@
  */
 import { useMemo, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQueries, useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
+import { useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, ArrowDown, ArrowUp, CalendarClock, ChevronDown, ChevronRight, FolderPlus, Inbox, Pencil, Pin, PinOff, Settings, SlidersHorizontal, Star, Trash2, Users } from 'lucide-react';
 import { DEFAULT_USER_SETTINGS, type AccountInfo, type FavoriteFolder, type FolderListResult, type MailFolder, type UserSettings } from '@kuvert/shared';
@@ -13,8 +13,8 @@ import { api, errorMessage } from '@/lib/api';
 import { qk, useSettings, useUpdateSettings } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { Button, ColorDot, Spinner, useConfirm, type MenuItem } from '@/components/ui';
-import { buildFolderTree, fetchFolders, folderLabel, folderPath, mailKeys, moveMessages, type FolderNode, type ListView, type MessageRef } from './api';
-import { useMailAccounts } from './hooks';
+import { buildFolderTree, folderLabel, folderPath, mailKeys, moveMessages, type FolderNode, type ListView, type MessageRef } from './api';
+import { unifiedUnreadOf, useAllFolders, useMailAccounts } from './hooks';
 import { ContextMenu, PromptDialog } from './components/menus';
 import { FolderIcon } from './components/FolderIcon';
 import { UnifiedInboxDialog } from './components/UnifiedInboxDialog';
@@ -205,23 +205,9 @@ export function MailSidebar({ current }: { current: Current }) {
     });
   };
 
-  const folderQueries = useQueries({
-    queries: accounts.map((a) => ({ queryKey: mailKeys.folders(a.id), queryFn: () => fetchFolders(a.id), staleTime: 60_000, refetchInterval: 120_000 })),
-  });
+  const folderQueries = useAllFolders(accounts);
   // Ungelesen-Zähler über alle ausgewählten Posteingänge (Hauptpostfach + gewählte freigegebene Postfächer)
-  const unifiedUnread = accounts.reduce((sum, a, i) => {
-    const data = folderQueries[i]?.data;
-    if (!data) return sum;
-    const primary = data.mailboxes[0]?.id;
-    const shared = new Set((a.settings.unifiedSharedMailboxes ?? []).map((m) => m.trim().toLowerCase()));
-    return (
-      sum +
-      data.folders
-        .filter((f) => f.role === 'inbox')
-        .filter((f) => (!f.mailboxId || f.mailboxId === primary ? a.settings.includeInUnifiedInbox !== false : shared.has(f.mailboxId.toLowerCase())))
-        .reduce((n, f) => n + (f.unread ?? 0), 0)
-    );
-  }, 0);
+  const unifiedUnread = unifiedUnreadOf(accounts, folderQueries);
   const [unifiedDialog, setUnifiedDialog] = useState(false);
   const [unifiedMenu, setUnifiedMenu] = useState<{ x: number; y: number } | null>(null);
 

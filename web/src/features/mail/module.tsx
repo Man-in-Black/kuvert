@@ -3,6 +3,7 @@ import { Mail } from 'lucide-react';
 import type { WebModule } from '@/modules/types';
 import { Spinner } from '@/components/ui';
 import { ComposerHost } from './compose/ComposerHost';
+import { useUnifiedUnread } from './hooks';
 
 const MailPage = lazy(() => import('./MailPage').then((m) => ({ default: m.MailPage })));
 const ComposeWindowPage = lazy(() => import('./compose/ComposeWindow').then((m) => ({ default: m.ComposeWindowPage })));
@@ -21,7 +22,7 @@ const fallback = (
  */
 const mod: WebModule = {
   id: 'mail',
-  nav: [{ path: 'mail', label: 'Mail', icon: Mail, order: 10 }],
+  nav: [{ path: 'mail', label: 'Mail', icon: Mail, order: 10, useBadge: useUnifiedUnread }],
   routes: [
     {
       path: 'mail/*',

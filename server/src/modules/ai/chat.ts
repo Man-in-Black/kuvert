@@ -63,7 +63,12 @@ export function buildChatSystem(opts: {
     'Wenn du eine E-Mail entwerfen sollst, gib nur den Mailtext mit Anrede und Grußformel aus, ohne Signatur und ohne Platzhalternamen.',
   ];
   if (opts.context?.text.trim()) {
-    const what = opts.context.kind === 'conversation' ? 'den folgenden E-Mail-Verlauf (älteste Nachricht zuerst; „(ich)“ markiert eigene Nachrichten)' : 'die folgende E-Mail';
+    const what =
+      opts.context.kind === 'conversation'
+        ? 'den folgenden E-Mail-Verlauf (älteste Nachricht zuerst; „(ich)“ markiert eigene Nachrichten)'
+        : opts.context.kind === 'meeting'
+          ? 'das folgende aufgezeichnete Gespräch (Zusammenfassung, Aufgaben/Fragen und Transkript mit Zeitmarken und Sprechern)'
+          : 'die folgende E-Mail';
     parts.push(
       `Der Benutzer hat ${what} geöffnet und stellt Fragen dazu. Beziehe dich darauf.\n"""\n${opts.context.text.trim().slice(0, CONTEXT_BUDGET)}\n"""`,
     );

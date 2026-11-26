@@ -20,7 +20,7 @@ Läuft als ein Docker-Container.
 | **Nextcloud / WebDAV** | Kalender, Kontakte, Aufgaben und Dateien inkl. Freigabelinks |
 | **Mehrere Konten** | Gemeinsamer Posteingang (kontoübergreifend sortiert), Suche im Ordner, im ganzen Konto (alle Unterordner) oder kontoübergreifend, Farben pro Konto |
 | **Konversationsansicht** | Nachrichten nach Unterhaltung gruppiert (Thread-ID von Microsoft/Gmail, bei IMAP über Message-ID/In-Reply-To und Betreff), Leseansicht mit allen Nachrichten des Threads – *Einstellungen → Allgemein*; Doppelklick öffnet eine Nachricht oder Unterhaltung (auch eine einzelne Nachricht einer aufgeklappten Unterhaltung) in einem **eigenen Fenster** |
-| **Kalender** | Überlagert *oder* nebeneinander (getrennte Spalten), Drag & Drop, Serien, Teilnehmer, Zu-/Absagen, Online-Meeting per Klick |
+| **Kalender** | Überlagert *oder* nebeneinander (getrennte Spalten), Drag & Drop, Serien, Teilnehmer, Zu-/Absagen, Online-Meeting per Klick; zusätzlich als **Kalender-Leiste** rechts (Agenda der nächsten 7 Tage), anpinnbar neben Mail & Co. |
 | **Editor** | TipTap-WYSIWYG: Schriftarten, Farben, Tabellen, Bilder (inline/cid), Links, Vorlagen, Nur-Text-Modus |
 | **Signaturen** | **HTML** (im Editor bearbeitbar) und **RAW** (Quelltext wird byte-genau angehängt) – pro Konto/Absender, Standard für Neu/Antwort |
 | **S/MIME** | Signieren, Verschlüsseln, Prüfen, Entschlüsseln; .p12/.pfx-Import; Empfängerzertifikate werden automatisch gesammelt |
@@ -195,7 +195,9 @@ Empfehlungen: `llama3.1:8b`, `qwen2.5:7b`, `mistral-nemo` (gutes Deutsch), mit G
 ### KI-Chat
 
 Seitenpanel rechts (nicht modal – Liste und Mail bleiben bedienbar), geöffnet über **KI-Chat** in der
-Seitenleiste, die Befehlspalette (Strg+K → „KI-Chat“) oder mobil über „Mehr“:
+Seitenleiste, die Befehlspalette (Strg+K → „KI-Chat“) oder mobil über „Mehr“. Wie die **Kalender-Leiste** lässt
+es sich über die Pinnadel **anpinnen**: Dann sitzt es neben dem Inhalt, und Liste und Lesefenster rücken zur Seite,
+statt verdeckt zu werden; die Breite lässt sich am linken Rand ziehen (beides merkt sich der Browser):
 
 - **Global:** freie Fragen an das Modell. Mit **Postfach durchsuchen** (Standard) formuliert die KI zu jeder
   Frage eine Suchanfrage (inkl. `from:`, `after:` …), durchsucht den Suchindex bzw. live die Konten, liest die
@@ -296,7 +298,9 @@ Nachrichten werden als Markdown gespeichert; die Eingabe ist ein WYSIWYG-Editor,
 `_kursiv_`, `` `Code` ``, `> Zitat`, `- Liste` oder ```` ``` ```` beim Tippen umsetzt (alternativ über die Formatleiste).
 Dateien und Bilder lassen sich anhängen, einfügen oder ablegen; sie liegen unter `/data/chat-files` und sind nur für
 Mitglieder der Unterhaltung abrufbar. Gruppen-Admins können Mitglieder verwalten und Nachrichten moderieren.
-Benachrichtigungen (Hinweis, Desktop, Ton, Web Push) stellt jeder unter *Einstellungen → Chat* ein.
+Benachrichtigungen (Hinweis, Desktop, Ton, Web Push) stellt jeder unter *Einstellungen → Chat* ein; eine
+Desktop-Benachrichtigung kommt auch, wenn Kuvert zwar sichtbar, aber nicht das aktive Fenster ist. Ungelesene
+Nachrichten zählt ein Badge an **Chat**, ungelesene Mails im Sammel-Posteingang eines an **Mail**.
 Abschalten für die ganze Instanz: `KUVERT_DISABLED_MODULES=chat`.
 
 **Mattermost, Nextcloud Talk & Teams:** Zusätzlich kann jeder Benutzer unter *Einstellungen → Chat → Verbundene Dienste*

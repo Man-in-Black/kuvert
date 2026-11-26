@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import type { AccountInfo, MailIdentity } from '@kuvert/shared';
+import type { AccountInfo, FolderListResult, MailIdentity } from '@kuvert/shared';
 import { useAccountsWith } from '@/lib/queries';
 import { fetchFolders, fetchIdentities, mailKeys } from './api';
 
@@ -16,6 +16,36 @@ export function useFolders(accountId: string | undefined) {
     staleTime: 60_000,
     refetchInterval: 120_000,
   });
+}
+
+/** Ordnerlisten aller Mail-Konten (gleicher Cache wie die Ordnerleiste) */
+export function useAllFolders(accounts: AccountInfo[]) {
+  return useQueries({
+    queries: accounts.map((a) => ({ queryKey: mailKeys.folders(a.id), queryFn: () => fetchFolders(a.id), staleTime: 60_000, refetchInterval: 120_000 })),
+  });
+}
+
+/** Ungelesen-Zähler über alle ausgewählten Posteingänge (Hauptpostfach + gewählte freigegebene Postfächer) */
+export function unifiedUnreadOf(accounts: AccountInfo[], folders: { data?: FolderListResult }[]): number {
+  return accounts.reduce((sum, a, i) => {
+    const data = folders[i]?.data;
+    if (!data) return sum;
+    const primary = data.mailboxes[0]?.id;
+    const shared = new Set((a.settings.unifiedSharedMailboxes ?? []).map((m) => m.trim().toLowerCase()));
+    return (
+      sum +
+      data.folders
+        .filter((f) => f.role === 'inbox')
+        .filter((f) => (!f.mailboxId || f.mailboxId === primary ? a.settings.includeInUnifiedInbox !== false : shared.has(f.mailboxId.toLowerCase())))
+        .reduce((n, f) => n + (f.unread ?? 0), 0)
+    );
+  }, 0);
+}
+
+/** Badge an „Mail“ in der Navigation: ungelesene Mails im Sammel-Posteingang */
+export function useUnifiedUnread(): number {
+  const accounts = useMailAccounts();
+  return unifiedUnreadOf(accounts, useAllFolders(accounts));
 }
 
 export interface IdentityOption {

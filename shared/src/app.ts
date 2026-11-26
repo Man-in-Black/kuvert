@@ -202,9 +202,9 @@ export interface AiChatTurn {
   content: string;
 }
 
-/** Angehängter Kontext eines KI-Chats: eine einzelne Mail oder ein ganzer Verlauf (als Text) */
+/** Angehängter Kontext eines KI-Chats: eine einzelne Mail, ein ganzer Verlauf oder ein aufgezeichnetes Gespräch (als Text) */
 export interface AiChatContext {
-  kind: 'message' | 'conversation';
+  kind: 'message' | 'conversation' | 'meeting';
   /** Anzeigename, z. B. der Betreff */
   title: string;
   text: string;

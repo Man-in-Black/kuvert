@@ -8,6 +8,7 @@ import type { NavItem, ShellAction } from '@/modules/types';
 import { Avatar, Dropdown, EmptyState, Kbd } from '@/components/ui';
 import { BrandMark } from '@/pages/AuthLayout';
 import { CommandPalette, openCommandPalette } from './CommandPalette';
+import { SidePanelDock } from './SidePanel';
 import { useNavItems, useShellActions, useUserMenuItems } from './shell-helpers';
 
 const COLLAPSE_KEY = 'kuvert.sidebar.collapsed';
@@ -54,6 +55,9 @@ export function AppShell() {
           <Route path="*" element={<EmptyState title="Seite nicht gefunden">Die aufgerufene Seite existiert nicht (mehr).</EmptyState>} />
         </Routes>
       </main>
+
+      {/* Angepinnte Seitenleisten (KI-Chat, Kalender): neben dem Inhalt statt darüber */}
+      <SidePanelDock />
 
       <MobileNav main={main} system={system} />
       <CommandPalette />

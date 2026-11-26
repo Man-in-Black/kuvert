@@ -38,7 +38,7 @@ const chatSchema = z.object({
     .min(1)
     .max(100)
     .refine((m) => m[m.length - 1]!.role === 'user', 'Die letzte Nachricht muss vom Benutzer sein'),
-  context: z.object({ kind: z.enum(['message', 'conversation']), title: z.string().max(500), text: z.string().max(100_000) }).optional(),
+  context: z.object({ kind: z.enum(['message', 'conversation', 'meeting']), title: z.string().max(500), text: z.string().max(100_000) }).optional(),
   searchMailbox: z.boolean().optional(),
   model: z.string().max(200).optional(),
 });
@@ -56,7 +56,7 @@ const storedChatSchema = z.object({
   title: z.string().trim().min(1).max(200),
   titleManual: z.boolean().optional(),
   contextKey: z.string().max(4000).nullish(),
-  context: z.object({ kind: z.enum(['message', 'conversation']), title: z.string().max(500), text: z.string().max(100_000) }).nullish(),
+  context: z.object({ kind: z.enum(['message', 'conversation', 'meeting']), title: z.string().max(500), text: z.string().max(100_000) }).nullish(),
   replyRef: z.object({ accountId: z.string().max(500), folderId: z.string().max(2000), id: z.string().max(2000) }).nullish(),
   searchMailbox: z.boolean(),
   model: z.string().max(200).nullish(),

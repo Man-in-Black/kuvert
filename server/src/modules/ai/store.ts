@@ -83,7 +83,7 @@ export const chatStore = {
     return rows.map((r) => ({
       id: r.id,
       title: r.title,
-      kind: r.kind === 'message' || r.kind === 'conversation' ? r.kind : 'global',
+      kind: r.kind === 'message' || r.kind === 'conversation' || r.kind === 'meeting' ? r.kind : 'global',
       contextTitle: r.context_title ?? undefined,
       messageCount: r.message_count,
       createdAt: r.created_at,
