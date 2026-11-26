@@ -39,6 +39,13 @@ const eventInput = z.object({
   showAs: z.enum(['free', 'busy', 'tentative', 'oof', 'workingElsewhere']).optional(),
 });
 
+/**
+ * Teiländerung eines Termins: nur gesendete Felder ändern sich. Achtung, Zod 4 setzt
+ * `.default()` auch innerhalb von `.partial()` ein – ohne diese Überschreibung würde
+ * jedes Verschieben den Titel auf "" setzen.
+ */
+const eventPatch = eventInput.extend({ title: z.string().optional() }).partial();
+
 const contactInput = z.object({
   displayName: z.string().default(''),
   firstName: z.string().optional(),
@@ -143,7 +150,7 @@ export async function pimRoutes(app: FastifyInstance, ctx: ModuleContext) {
   });
 
   app.patch<AccParams>('/api/calendar/accounts/:accountId/events', async (req) => {
-    const body = parse(z.object({ calendarId: z.string(), eventId: z.string(), event: eventInput.partial() }), req.body);
+    const body = parse(z.object({ calendarId: z.string(), eventId: z.string(), event: eventPatch }), req.body);
     const ev = await accounts
       .require(req.user.id, req.params.accountId, 'calendar')
       .updateEvent(body.calendarId, body.eventId, body.event as Partial<EventInput>);
