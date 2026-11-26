@@ -162,12 +162,12 @@ export async function callLog(client: ThreeCxClient, ext: string, days: number):
   let rows: XapiCallLogRow[];
   try {
     rows = await xapi(() =>
-      client.callLog(from, to, { $filter: `SourceDn eq '${ext}' or DestinationDn eq '${ext}'`, $orderby: 'StartTime desc', $top: 500 }),
+      client.callLog(from, to, { $filter: `SourceDn eq '${ext}' or DestinationDn eq '${ext}'`, $orderby: 'StartTime desc' }, 500),
     );
   } catch (err) {
     // Manche Versionen filtern das Funktionsergebnis nicht – dann ungefiltert holen und selbst filtern
     if (err instanceof AppError && err.code === 'threecx_no_config_api') throw err;
-    rows = await xapi(() => client.callLog(from, to, { $orderby: 'StartTime desc', $top: 3000 }));
+    rows = await xapi(() => client.callLog(from, to, { $orderby: 'StartTime desc' }, 1500));
   }
   const seen = new Set<string>();
   const entries: ThreeCxCallLogEntry[] = [];

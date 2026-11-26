@@ -123,6 +123,9 @@ export interface CcCallControlResult {
 
 type Method = 'GET' | 'POST' | 'PATCH';
 
+/** Höchstwert für $top in der 3CX-Konfigurations-API */
+const XAPI_PAGE = 100;
+
 const tokens = new Map<string, { token: string; expires: number; issued: number }>();
 
 /** OData-Abfrage (Leerzeichen als %20, nicht +) */
@@ -286,13 +289,29 @@ export class ThreeCxClient {
     return (await this.json<T>('GET', `/xapi/v1/${path}${odata(query)}`)).data as T;
   }
 
+  /**
+   * Sammlung seitenweise holen: 3CX erlaubt höchstens $top=100 pro Anfrage.
+   * Für stabiles Blättern sollte query ein $orderby enthalten.
+   */
+  async xapiAll<T>(path: string, query: Record<string, string | number | boolean | undefined>, max: number): Promise<T[]> {
+    const out: T[] = [];
+    for (let skip = 0; skip < max; skip += XAPI_PAGE) {
+      const top = Math.min(XAPI_PAGE, max - skip);
+      const data = await this.xapi<{ value?: T[] }>(path, { ...query, $top: top, $skip: skip || undefined });
+      const page = data?.value ?? [];
+      out.push(...page);
+      if (page.length < top) break;
+    }
+    return out;
+  }
+
   /** Benutzer der Anlage (Nebenstellen) */
   async pbxUsers(): Promise<XapiUser[]> {
-    const data = await this.xapi<{ value?: XapiUser[] }>('Users', {
-      $select: 'Id,Number,FirstName,LastName,DisplayName,EmailAddress,Mobile,CurrentProfileName,IsRegistered,HideInPhonebook,Enabled',
-      $top: 2000,
-    });
-    return data?.value ?? [];
+    return this.xapiAll<XapiUser>(
+      'Users',
+      { $select: 'Id,Number,FirstName,LastName,DisplayName,EmailAddress,Mobile,CurrentProfileName,IsRegistered,HideInPhonebook,Enabled', $orderby: 'Number' },
+      2000,
+    );
   }
 
   /** Benutzer der Anlage mit Nebenstelle und E-Mail (für die automatische Zuordnung) */
@@ -308,24 +327,23 @@ export class ThreeCxClient {
 
   /** Telefonbuch der Anlage */
   async contacts(): Promise<XapiContact[]> {
-    const data = await this.xapi<{ value?: XapiContact[] }>('Contacts', {
-      $select: 'Id,FirstName,LastName,CompanyName,Department,Title,Email,PhoneNumber,Business,Home,Other,BusinessFax',
-      $top: 5000,
-    });
-    return data?.value ?? [];
+    return this.xapiAll<XapiContact>(
+      'Contacts',
+      { $select: 'Id,FirstName,LastName,CompanyName,Department,Title,Email,PhoneNumber,Business,Home,Other,BusinessFax', $orderby: 'Id' },
+      5000,
+    );
   }
 
   /**
    * Anrufliste (wie „Berichte → Anrufbericht“). Parameter in Klammern gehören zur URL und
    * brauchen auch leer einen Wert; Zeichenketten in einfachen Anführungszeichen.
    */
-  async callLog(from: Date, to: Date, query: Record<string, string | number | boolean | undefined>): Promise<XapiCallLogRow[]> {
+  async callLog(from: Date, to: Date, query: Record<string, string | number | boolean | undefined>, max: number): Promise<XapiCallLogRow[]> {
     const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
     const fn =
       `ReportCallLogData/Pbx.GetCallLogData(periodFrom=${iso(from)},periodTo=${iso(to)},sourceType=0,sourceFilter='',` +
       `destinationType=0,destinationFilter='',callsType=0,callTimeFilterType=0,callTimeFilterFrom='0:00:0',` +
       `callTimeFilterTo='0:00:0',hidePcalls=false)`;
-    const data = await this.xapi<{ value?: XapiCallLogRow[] }>(fn, query);
-    return data?.value ?? [];
+    return this.xapiAll<XapiCallLogRow>(fn, query, max);
   }
 }
