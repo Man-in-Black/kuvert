@@ -15,5 +15,6 @@ import mailarchiver from './mailarchiver/index.js';
 import search from './search/index.js';
 import chat from './chat/index.js';
 import triage from './triage/index.js';
+import threecx from './threecx/index.js';
 
-export const allModules: ServerModule[] = [microsoft, google, imap, dav, smime, ai, notifications, mailcow, mailarchiver, search, chat, triage];
+export const allModules: ServerModule[] = [microsoft, google, imap, dav, smime, ai, notifications, mailcow, mailarchiver, search, chat, triage, threecx];

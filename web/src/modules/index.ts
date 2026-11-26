@@ -19,6 +19,7 @@ import archive from '@/features/archive/module';
 import search from '@/features/search/module';
 import chat from '@/features/chat/module';
 import triage from '@/features/triage/module';
+import threecx from '@/features/threecx/module';
 
 export const allModules: WebModule[] = [
   mail,
@@ -38,6 +39,7 @@ export const allModules: WebModule[] = [
   meetings,
   notifications,
   mailcow,
+  threecx,
 ];
 
 export function activeModules(ctx: ModuleActivationContext): WebModule[] {

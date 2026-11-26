@@ -1,4 +1,4 @@
-# Integrationen: mailcow, Mail-Archiver, Mattermost, Nextcloud Talk & Teams
+# Integrationen: mailcow, Mail-Archiver, 3CX, Mattermost, Nextcloud Talk & Teams
 
 ## mailcow
 
@@ -76,6 +76,50 @@ Deep-Link für Suchen: `/archive?q=Rechnung&from=2026-01-01`
 - Die Schlüssel werden verschlüsselt gespeichert und nie an den Browser zurückgegeben.
 - Überschreitet ein Benutzer das Anfragelimit des Archivs (HTTP 429), zeigt Kuvert einen Hinweis.
 - Die Archiv-API ist rein lesend; Kuvert verändert keine archivierten Daten.
+
+## 3CX (Click-to-Call)
+
+Anbindung an die Telefonanlage **3CX V20** über die **Call Control API**: Ein Klick auf eine
+Telefonnummer in Kuvert (Kontakte, Ansprechpartner) startet den Anruf über die eigene Nebenstelle.
+Je nach Gerät klingelt zuerst das eigene Telefon bzw. die 3CX-App, nach dem Abheben wird gewählt;
+Telefone mit direkter Anrufsteuerung (uaCSTA) wählen sofort. Ohne aktive Anbindung oder ohne
+zugeordnete Nebenstelle bleiben Telefonnummern normale `tel:`-Links.
+
+### Voraussetzungen
+
+- 3CX V20 mit einer Lizenz **ab 8SC, Edition Enterprise bzw. AI** – nur dort gibt es die Call Control API.
+- Kuvert muss die Anlage per HTTPS erreichen (gleiche Adresse wie die 3CX-Verwaltung).
+
+### Einrichtung
+
+1. In 3CX: **Integrationen → API → Hinzufügen**
+   - **Client-ID** vergeben (z. B. `kuvert`) und **„3CX Call Control API Access“** aktivieren.
+   - Unter den **zu überwachenden Nebenstellen** alle Nebenstellen eintragen, von denen aus Kuvert-Benutzer
+     anrufen sollen – andere lehnt 3CX ab.
+   - Optional für die automatische Zuordnung: **„3CX Configuration API Access“** mit einer Rolle, die Benutzer lesen darf.
+   - Den angezeigten **API-Schlüssel** sichern – 3CX zeigt ihn nur einmal.
+2. In Kuvert: **Admin → 3CX** – Adresse der Anlage, Client-ID und API-Schlüssel eintragen, aktivieren,
+   „Verbindung testen“. Der Test zeigt die abrufbaren (überwachten) Nebenstellen.
+3. Unter **Nebenstellen der Benutzer** jedem Benutzer seine Nebenstelle zuordnen – von Hand oder mit
+   **„Per E-Mail zuordnen“** (gleiche E-Mail-Adresse in Kuvert und 3CX; bestehende Zuordnungen bleiben).
+4. Benutzer wählen unter **Einstellungen → Telefonie** auf Wunsch ihr bevorzugtes Gerät
+   (Tischtelefon, App, Webclient) und können einen Probeanruf starten.
+
+Alternativ per Umgebung vorbelegen (aktiviert die Anbindung, bis im Admin-Bereich gespeichert wird):
+
+```env
+THREECX_URL=https://firma.3cx.de
+THREECX_CLIENT_ID=kuvert
+THREECX_API_KEY=…
+```
+
+### Hinweise
+
+- Die Nebenstelle legt **nur der Admin** fest – Benutzer können nicht von fremden Apparaten aus anrufen.
+- Nummern werden vor dem Wählen bereinigt: `+49 (0) 30 123-45` → `+493012345`. Versteht die Anlage
+  kein führendes `+`, im Admin-Bereich einen Ersatz (z. B. `00`) eintragen.
+- Strg/⌘/Umschalt-Klick auf eine Nummer öffnet weiterhin den normalen `tel:`-Link.
+- Der API-Schlüssel wird verschlüsselt gespeichert und nie an den Browser zurückgegeben.
 
 ## Mattermost, Nextcloud Talk & Teams im Chat
 

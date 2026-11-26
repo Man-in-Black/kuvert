@@ -9,3 +9,4 @@ export * from './search';
 export * from './chat';
 export * from './emoji';
 export * from './triage';
+export * from './telephony';

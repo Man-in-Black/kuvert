@@ -28,6 +28,7 @@ import { Avatar, Button, ColorDot, EmptyState, IconButton, Input, SidebarSheet, 
 import { errorMessage } from '@/lib/api';
 import { useAccountMap } from '@/lib/queries';
 import { cn } from '@/lib/utils';
+import { PhoneLink } from '@/features/threecx/PhoneLink';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { openCompose } from '@/features/mail/compose-api';
 import { ADDRESS_TYPES, EMAIL_TYPES, PHONE_TYPES, bookKey, deleteContact, typeLabel, useAddressBooks, useContactList, type BookSelection } from './api';
@@ -414,9 +415,7 @@ function ContactDetail({
           ))}
           {c.phones.map((p, i) => (
             <DetailRow key={`p${i}`} icon={<Phone />} label={typeLabel(PHONE_TYPES, p.type) || 'Telefon'}>
-              <a href={`tel:${p.number.replace(/\s+/g, '')}`} className="hover:underline">
-                {p.number}
-              </a>
+              <PhoneLink number={p.number} className="hover:underline" />
             </DetailRow>
           ))}
           {(c.addresses ?? []).map((a, i) => {

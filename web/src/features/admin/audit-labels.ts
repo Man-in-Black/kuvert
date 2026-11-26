@@ -27,6 +27,9 @@ const LABELS: Record<string, string> = {
   'profile.email_changed': 'E-Mail geändert',
   'profile.session_revoked': 'Sitzung beendet',
   'profile.sessions_revoked': 'Andere Sitzungen beendet',
+  'threecx.config_updated': '3CX-Anbindung geändert',
+  'threecx.extension_assigned': '3CX-Nebenstelle zugeordnet',
+  'threecx.auto_assigned': '3CX-Nebenstellen automatisch zugeordnet',
 };
 
 export function auditLabel(action: string): string {
