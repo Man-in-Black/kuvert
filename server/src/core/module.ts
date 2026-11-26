@@ -67,6 +67,15 @@ export interface OAuthHandler {
   /** features: zusätzliche Funktionen, für die weitere Berechtigungen nötig sind (z. B. "chat" für Teams) */
   getAuthorizeUrl(p: { state: string; redirectUri: string; codeChallenge: string; loginHint?: string; features?: string[] }): string;
   handleCallback(p: { code: string; redirectUri: string; codeVerifier: string; features?: string[] }): Promise<AccountSetupResult>;
+  /** Administratorzustimmung für eine ganze (fremde) Organisation, z. B. Microsoft Entra ID */
+  adminConsent?: {
+    /** Möglich? (z. B. nicht, wenn die App nur für die eigene Organisation eingerichtet ist) */
+    available(): boolean;
+    /** Zustimmungs-URL; tenant = Mandanten-ID/Domain oder leer für "Organisation des Admins" */
+    url(p: { tenant?: string; redirectUri: string; state?: string }): string;
+    /** Bedeutet die Fehlermeldung "Organisation hat (noch) nicht zugestimmt"? Liefert den Mandanten. */
+    tenantFromError(message: string): string | null;
+  };
 }
 
 export interface AccountTypeDefinition {

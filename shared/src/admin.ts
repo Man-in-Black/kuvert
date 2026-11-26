@@ -200,7 +200,12 @@ export type ServiceSettingsPatch = { [K in ServiceKey]?: Record<string, string |
 /* ───────────────────────────── Microsoft 365: automatische App-Einrichtung ───────────────────────────── */
 
 /** tenant = nur die eigene Organisation, multi = alle Organisationen + private Microsoft-Konten */
-export type MsAppAudience = 'tenant' | 'multi';
+/**
+ * Wer sich anmelden darf: tenant = nur die eigene Organisation, orgs = mehrere Organisationen
+ * (ohne private Konten, ggf. auf die im Entra-Portal erlaubten Mandanten beschränkt),
+ * multi = alle Microsoft-Konten inkl. privater Outlook.com-Konten.
+ */
+export type MsAppAudience = 'tenant' | 'orgs' | 'multi';
 
 export type MsProvisionState = 'waiting' | 'working' | 'done' | 'failed' | 'cancelled' | 'expired';
 
@@ -218,6 +223,8 @@ export interface MsProvisionedApp {
   tenantId: string;
   tenantName?: string | null;
   audience: MsAppAudience;
+  /** Im Entra-Portal auf bestimmte Mandanten beschränkt: Anzahl der weiteren erlaubten Organisationen */
+  allowedTenants?: number | null;
   /** Ablauf des von Kuvert erzeugten geheimen Clientschlüssels */
   secretExpiresAt: string;
   /** Administratorzustimmung für die Organisation wurde erteilt */

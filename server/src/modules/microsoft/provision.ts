@@ -37,6 +37,18 @@ const BOOTSTRAP_SCOPES = [
 /** App-ID von Microsoft Graph */
 const GRAPH_APP_ID = '00000003-0000-0000-c000-000000000000';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
+const GRAPH_BETA = 'https://graph.microsoft.com/beta';
+/** signInAudience der App je Auswahl */
+const SIGN_IN_AUDIENCE: Record<MsAppAudience, string> = {
+  tenant: 'AzureADMyOrg',
+  orgs: 'AzureADMultipleOrgs',
+  multi: 'AzureADandPersonalMicrosoftAccount',
+};
+const AUDIENCE_LABEL: Record<MsAppAudience, string> = {
+  tenant: 'Nur diese Organisation',
+  orgs: 'Mehrere Organisationen',
+  multi: 'Alle Microsoft-Konten',
+};
 const META_KEY = 'microsoft-app';
 /** Laufzeiten des Clientschlüssels in Monaten (Fallback, falls eine Richtlinie lange Laufzeiten verbietet) */
 const SECRET_MONTHS = [24, 12, 6];
@@ -277,6 +289,24 @@ function graphClient(token: string): Graph {
   return (path, opts = {}) => apiJson(`${GRAPH}${path}`, { ...opts, token, noAuthError: true });
 }
 
+/**
+ * Im Entra-Portal festgelegte Liste erlaubter Mandanten (Vorschau-Funktion, nur über Graph beta lesbar).
+ * Liefert die Mandanten-IDs, null ohne Einschränkung, undefined wenn nicht ermittelbar.
+ */
+async function readAllowedTenants(token: string, objectId: string): Promise<string[] | null | undefined> {
+  try {
+    const res = await apiJson<{ signInAudienceRestrictions?: { '@odata.type'?: string; allowedTenantIds?: string[] } | null }>(
+      withOData(`${GRAPH_BETA}/applications/${objectId}`, { $select: 'signInAudienceRestrictions' }),
+      { token, noAuthError: true },
+    );
+    const r = res.signInAudienceRestrictions;
+    if (!r || !/allowedTenantsAudience$/i.test(r['@odata.type'] ?? '')) return null;
+    return r.allowedTenantIds ?? [];
+  } catch {
+    return undefined;
+  }
+}
+
 const odata = (v: string) => v.replace(/'/g, "''");
 
 /** OData-Abfrageparameter mit %20 statt "+" für Leerzeichen (sicher für $filter) */
@@ -324,7 +354,9 @@ async function provision(ctx: ModuleContext, job: Job, token: string, tenantId: 
   if (!tenantId) throw new Error('Tenant-ID konnte aus der Anmeldung nicht ermittelt werden.');
   const g = graphClient(token);
   const redirectUri = config.oauthRedirectUri;
-  const audience = job.audience === 'multi' ? 'AzureADandPersonalMicrosoftAccount' : 'AzureADMyOrg';
+  /** Tatsächlich verwendeter Kontotyp (kann von der Auswahl abweichen, s. erlaubte Mandanten) */
+  let effective: MsAppAudience = job.audience;
+  let allowedTenants: number | null = null;
 
   /* 1. Berechtigungen von Microsoft Graph nachschlagen (Name → ID) */
   let step = addStep(job, 'Microsoft-Graph-Berechtigungen nachschlagen');
@@ -356,6 +388,23 @@ async function provision(ctx: ModuleContext, job: Job, token: string, tenantId: 
   }
 
   let created = false;
+  let audienceNote = '';
+  if (app?.signInAudience === SIGN_IN_AUDIENCE.orgs) {
+    // Im Entra-Portal auf bestimmte Mandanten beschränkt → Einschränkung und Kontotyp beibehalten,
+    // sonst würde das Ändern von signInAudience die Liste erlaubter Mandanten verwerfen.
+    const allowed = await readAllowedTenants(token, app.id);
+    if (allowed) {
+      effective = 'orgs';
+      allowedTenants = allowed.filter((id) => id.toLowerCase() !== tenantId.toLowerCase()).length;
+      audienceNote = `im Entra-Portal festgelegte erlaubte Mandanten beibehalten (${allowedTenants} weitere Organisation${allowedTenants === 1 ? '' : 'en'})`;
+    } else if (allowed === undefined && job.audience !== 'orgs') {
+      effective = 'orgs';
+      audienceNote = 'erlaubte Mandanten konnten nicht geprüft werden – Kontotyp „Mehrere Organisationen“ unverändert gelassen';
+    }
+    if (audienceNote && job.audience !== effective) audienceNote += ` · Auswahl „${AUDIENCE_LABEL[job.audience]}“ nicht übernommen (im Entra-Portal unter „Authentifizierung“ änderbar)`;
+  }
+  const audience = SIGN_IN_AUDIENCE[effective];
+
   if (app) {
     const otherResources = (app.requiredResourceAccess ?? []).filter((r) => r.resourceAppId !== GRAPH_APP_ID);
     const existing = app.requiredResourceAccess?.find((r) => r.resourceAppId === GRAPH_APP_ID)?.resourceAccess ?? [];
@@ -372,10 +421,12 @@ async function provision(ctx: ModuleContext, job: Job, token: string, tenantId: 
     if (app.signInAudience !== audience) {
       patch.signInAudience = audience;
       // Private Microsoft-Konten setzen Zugriffstoken v2 voraus
-      if (job.audience === 'multi' && app.api?.requestedAccessTokenVersion !== 2) patch.api = { ...app.api, requestedAccessTokenVersion: 2 };
+      if (effective === 'multi' && app.api?.requestedAccessTokenVersion !== 2) patch.api = { ...app.api, requestedAccessTokenVersion: 2 };
     }
     await g(`/applications/${app.id}`, { method: 'PATCH', body: patch });
-    step.done(`Vorhandene App „${app.displayName}“ aktualisiert (App-ID ${app.appId})`);
+    const detail = `Vorhandene App „${app.displayName}“ aktualisiert (App-ID ${app.appId})`;
+    if (audienceNote && job.audience !== effective) step.warn(`${detail} · ${audienceNote}`);
+    else step.done(audienceNote ? `${detail} · ${audienceNote}` : detail);
   } else {
     app = await g<GraphApp>('/applications', {
       method: 'POST',
@@ -448,7 +499,7 @@ async function provision(ctx: ModuleContext, job: Job, token: string, tenantId: 
 
   /* 6. In Kuvert übernehmen */
   step = addStep(job, 'Zugangsdaten in Kuvert speichern');
-  const tenant = job.audience === 'tenant' ? tenantId : 'common';
+  const tenant = effective === 'tenant' ? tenantId : effective === 'orgs' ? 'organizations' : 'common';
   const previousClientId = config.microsoft.clientId;
   systemSettings.update({ microsoft: { clientId: theApp.appId, clientSecret: secret.secretText, tenant } });
   for (const acc of ctx.accounts.listAllEnabled()) if (acc.type === 'microsoft') await ctx.accounts.invalidate(acc.id);
@@ -468,7 +519,8 @@ async function provision(ctx: ModuleContext, job: Job, token: string, tenantId: 
     displayName: theApp.displayName,
     tenantId,
     tenantName,
-    audience: job.audience,
+    audience: effective,
+    allowedTenants,
     secretExpiresAt: secret.endDateTime,
     keyId: secret.keyId,
     consentGranted,
@@ -489,7 +541,7 @@ async function provision(ctx: ModuleContext, job: Job, token: string, tenantId: 
 
   audit.log('admin.microsoft_app_provisioned', {
     actorId: job.userId,
-    details: { appId: theApp.appId, tenantId, audience: job.audience, created, consentGranted, microsoftAdmin: job.signedInAs ?? null },
+    details: { appId: theApp.appId, tenantId, audience: effective, allowedTenants, created, consentGranted, microsoftAdmin: job.signedInAs ?? null },
   });
   const { keyId: _keyId, ...publicMeta } = meta;
   return { ...publicMeta, portalUrl: portalUrl(theApp.appId) };

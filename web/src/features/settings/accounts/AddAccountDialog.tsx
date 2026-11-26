@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { Button, Modal, Spinner } from '@/components/ui';
 import { DynamicForm, initialValues, normalizeValues, type FormValues } from '../DynamicForm';
 import { HelpBox } from '../ui';
+import { copyConsentLink } from './consent';
 import { AccountTypeIcon, CapabilityChips, oauthEnvHint } from './shared';
 
 interface AutoconfigResult {
@@ -152,6 +153,30 @@ export function AddAccountDialog({ open, onClose }: { open: boolean; onClose: ()
               );
             })}
           </div>
+          {types
+            .filter((t) => t.auth === 'oauth' && t.configured && t.adminConsent)
+            .map((t) => (
+              <div key={`consent-${t.type}`} className="mt-4">
+                <HelpBox>
+                  <div className="font-medium">{t.label}: Konto einer anderen Organisation?</div>
+                  <div className="mt-0.5">
+                    Beim ersten Konto einer fremden Organisation muss deren Administrator Kuvert einmal zustimmen. Danach können sich alle Benutzer dieser
+                    Organisation normal verbinden.
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => (window.location.href = `/api/accounts/oauth/${encodeURIComponent(t.type)}/consent?returnTo=${encodeURIComponent('/settings/accounts')}`)}
+                    >
+                      Als Administrator zustimmen
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => void copyConsentLink(t.type)}>
+                      Link für den Administrator kopieren
+                    </Button>
+                  </div>
+                </HelpBox>
+              </div>
+            ))}
           {types.some((t) => t.auth === 'oauth') && (
             <div className="mt-4">
               <HelpBox>

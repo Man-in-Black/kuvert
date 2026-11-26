@@ -66,6 +66,18 @@ export function msOAuthClient(): OAuthClient {
   return client;
 }
 
+/** Kuvert nimmt Konten aus mehreren Organisationen an (nicht auf einen Mandanten festgelegt)? */
+function multiTenant(): boolean {
+  return ['common', 'organizations'].includes((config.microsoft.tenant || 'common').toLowerCase());
+}
+
+/**
+ * Fehler, die eine fehlende Zustimmung der Organisation bedeuten:
+ * 700016 = App im Verzeichnis unbekannt (noch keine Unternehmensanwendung), 65001 = nicht zugestimmt,
+ * 90094/90095 = Administratorgenehmigung erforderlich.
+ */
+const CONSENT_ERRORS = /\bAADSTS(700016|65001|90094|90095)\b/;
+
 export const msOAuth: OAuthHandler = {
   getAuthorizeUrl(p) {
     return msOAuthClient().buildAuthorizeUrl({ ...p, extraScopes: msExtraScopes(p.features) });
@@ -87,5 +99,23 @@ export const msOAuth: OAuthHandler = {
       secrets: { tokens },
       settings: { sharedMailboxes: [] },
     };
+  },
+
+  adminConsent: {
+    available: () => !!config.microsoft.clientId && multiTenant(),
+    url({ tenant, redirectUri, state }) {
+      const q = new URLSearchParams({
+        client_id: config.microsoft.clientId,
+        // .default = alle in der App-Registrierung hinterlegten Berechtigungen
+        scope: 'https://graph.microsoft.com/.default',
+        redirect_uri: redirectUri,
+      });
+      if (state) q.set('state', state);
+      return `https://login.microsoftonline.com/${encodeURIComponent(tenant || 'organizations')}/v2.0/adminconsent?${q.toString()}`;
+    },
+    tenantFromError(message) {
+      if (!multiTenant() || !CONSENT_ERRORS.test(message)) return null;
+      return /directory '([0-9a-f-]{36})'/i.exec(message)?.[1] ?? 'organizations';
+    },
   },
 };

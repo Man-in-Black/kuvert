@@ -23,6 +23,7 @@ const LABELS: Record<string, string> = {
   'api.webhook_created': 'Webhook angelegt',
   'account.added': 'Konto hinzugefügt',
   'account.connected': 'Konto verbunden',
+  'account.admin_consent': 'Administratorzustimmung erteilt',
   'account.removed': 'Konto entfernt',
   'profile.email_changed': 'E-Mail geändert',
   'profile.session_revoked': 'Sitzung beendet',

@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, CircleX, ExternalLink, LoaderCircle, TriangleAlert, Wand2 } from 'lucide-react';
-import type { MsAppAudience, MsProvisionOverview, MsProvisionStatus, MsProvisionStep } from '@kuvert/shared';
+import type { MsAppAudience, MsProvisionedApp, MsProvisionOverview, MsProvisionStatus, MsProvisionStep } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
 import { qk } from '@/lib/queries';
 import { cn } from '@/lib/utils';
@@ -60,7 +60,7 @@ export function MsAutoSetup({ servicesKey }: { servicesKey: readonly unknown[] }
                 <CircleCheck className="h-4 w-4 text-success" /> Automatisch eingerichtet
               </div>
               <div className="mt-1 text-muted">
-                App „{app.displayName}“{app.tenantName ? ` in „${app.tenantName}“` : ''} · {app.audience === 'tenant' ? 'nur diese Organisation' : 'alle Microsoft-Konten'}
+                App „{app.displayName}“{app.tenantName ? ` in „${app.tenantName}“` : ''} · {audienceText(app)}
                 {app.provisionedBy ? ` · eingerichtet von ${app.provisionedBy}` : ''} am {fmtDate(app.provisionedAt)}
               </div>
               <div className={cn('mt-0.5', daysLeft !== null && daysLeft < 30 ? 'font-medium text-warning' : 'text-muted')}>
@@ -179,9 +179,10 @@ function MsProvisionDialog({
         <Field label="Microsoft-365-Administrator" hint="Die Domain bestimmt die Organisation (Tenant), in der die App angelegt wird.">
           <Input type="email" autoFocus autoComplete="off" placeholder="admin@firma.de" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
         </Field>
-        <Field label="Wer darf sich anmelden?">
+        <Field label="Wer darf sich anmelden?" hint="Ist die App im Entra-Portal auf bestimmte Mandanten beschränkt, bleibt diese Liste erhalten.">
           <Select value={audience} onChange={(e) => setAudience(e.target.value as MsAppAudience)}>
             <option value="tenant">Nur Konten dieser Organisation (empfohlen)</option>
+            <option value="orgs">Mehrere Organisationen (keine privaten Konten)</option>
             <option value="multi">Alle Microsoft-Konten (andere Organisationen und private Outlook.com-Konten)</option>
           </Select>
         </Field>
@@ -331,4 +332,11 @@ function StepList({ steps, working }: { steps: MsProvisionStep[]; working: boole
       ))}
     </ul>
   );
+}
+
+function audienceText(app: MsProvisionedApp): string {
+  if (app.audience === 'tenant') return 'nur diese Organisation';
+  if (app.audience === 'multi') return 'alle Microsoft-Konten';
+  if (app.allowedTenants != null) return `nur freigegebene Organisationen (${app.allowedTenants} weitere)`;
+  return 'mehrere Organisationen';
 }

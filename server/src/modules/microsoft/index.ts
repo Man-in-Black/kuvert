@@ -72,7 +72,7 @@ export default defineModule({
       const body = parse(
         z.object({
           adminEmail: z.string().trim().max(320).optional(),
-          audience: z.enum(['tenant', 'multi']).default('tenant'),
+          audience: z.enum(['tenant', 'orgs', 'multi']).default('tenant'),
           displayName: z.string().trim().min(1).max(120).default('Kuvert'),
         }),
         req.body ?? {},

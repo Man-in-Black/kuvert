@@ -28,6 +28,7 @@ export class Registry {
       capabilities: t.capabilities,
       auth: t.auth,
       configured: t.isConfigured ? t.isConfigured() : true,
+      adminConsent: t.oauth?.adminConsent?.available() ?? false,
       fields: t.fields,
       settingsFields: t.settingsFields,
     }));

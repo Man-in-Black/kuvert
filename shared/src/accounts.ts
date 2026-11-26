@@ -29,6 +29,8 @@ export interface AccountTypeInfo {
   auth: 'oauth' | 'form';
   /** Bei OAuth: ist eine Client-ID/Secret serverseitig konfiguriert? */
   configured: boolean;
+  /** Bei OAuth: Administratorzustimmung für eine andere Organisation kann angefordert werden */
+  adminConsent?: boolean;
   fields?: FieldDef[];
   /** Felder, die nach der Einrichtung in den Kontoeinstellungen bearbeitet werden können */
   settingsFields?: FieldDef[];
