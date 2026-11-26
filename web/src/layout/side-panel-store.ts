@@ -1,13 +1,13 @@
 /**
  * Zustand der Seitenleiste rechts (Kalender, Kontakte, Chat, KI-Chat, Telefon …):
  * welches Panel aufgeklappt ist (null = eingeklappt), ob sie angepinnt ist und wie breit
- * jedes Panel ist. Angepinnt bleibt das zuletzt offene Panel auch nach dem Neuladen offen.
+ * sie ist – eine Breite für alle Panels, damit beim Reiterwechsel nichts springt. Angepinnt bleibt das zuletzt offene Panel auch nach dem Neuladen offen.
  */
 import { useSyncExternalStore } from 'react';
 
 const ACTIVE_KEY = 'kuvert.rightbar.active';
 const PINNED_KEY = 'kuvert.rightbar.pinned';
-const WIDTH_KEY = 'kuvert.panels.width';
+const WIDTH_KEY = 'kuvert.rightbar.width';
 /** Früher pro Leiste angepinnt – einmalig übernehmen */
 const LEGACY_PINNED_KEY = 'kuvert.panels.pinned';
 
@@ -39,25 +39,22 @@ function loadPinned(): boolean {
   }
 }
 
-function loadWidths(): Record<string, number> {
-  try {
-    const v: unknown = JSON.parse(read(WIDTH_KEY) ?? '{}');
-    return v && typeof v === 'object' ? (v as Record<string, number>) : {};
-  } catch {
-    return {};
-  }
+function loadWidth(): number | null {
+  const v = Number(read(WIDTH_KEY));
+  return Number.isFinite(v) && v > 0 ? v : null;
 }
 
 interface State {
   active: string | null;
   pinned: boolean;
-  width: Record<string, number>;
+  /** null = Standardbreite */
+  width: number | null;
 }
 
 const pinned = loadPinned();
 /** Mobil ist ein Panel bildschirmfüllend – dort nach dem Neuladen nicht von selbst öffnen */
 const mobileStart = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
-let state: State = { active: pinned && !mobileStart ? read(ACTIVE_KEY) : null, pinned, width: loadWidths() };
+let state: State = { active: pinned && !mobileStart ? read(ACTIVE_KEY) : null, pinned, width: loadWidth() };
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<State>) {
@@ -117,18 +114,11 @@ export function setSidebarPinned(value: boolean) {
   set({ pinned: value });
 }
 
-export function setSidePanelWidth(id: string, width: number | null, persist: boolean) {
-  const next = { ...state.width };
-  if (width === null) delete next[id];
-  else next[id] = width;
-  set({ width: next });
-  if (persist) write(WIDTH_KEY, JSON.stringify(next));
+export function setSidebarWidth(width: number | null, persist: boolean) {
+  set({ width });
+  if (persist) persistSidebarWidth();
 }
 
-export function persistSidePanelWidths() {
-  write(WIDTH_KEY, JSON.stringify(state.width));
-}
-
-export function getSidePanelWidth(id: string): number | undefined {
-  return state.width[id];
+export function persistSidebarWidth() {
+  write(WIDTH_KEY, state.width === null ? null : String(state.width));
 }

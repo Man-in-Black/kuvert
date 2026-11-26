@@ -37,7 +37,6 @@ const mod: WebModule = {
       icon: MessagesSquare,
       order: 30,
       component: ChatPanel,
-      defaultWidth: 400,
       keywords: 'chat team nachrichten unterhaltung',
       useBadge: useUnreadTotal,
     },

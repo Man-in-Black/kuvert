@@ -32,7 +32,6 @@ const mod: WebModule = {
       icon: Users,
       order: 20,
       component: ContactsPanel,
-      defaultWidth: 380,
       keywords: 'kontakte adressbuch personen telefonnummer',
     },
   ],

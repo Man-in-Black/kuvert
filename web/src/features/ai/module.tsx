@@ -24,7 +24,6 @@ const mod: WebModule = {
       icon: BotMessageSquare,
       order: 40,
       component: AiChatPanel,
-      defaultWidth: 440,
       keywords: 'ki ai assistent fragen chat ollama llm',
     },
   ],

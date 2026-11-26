@@ -61,7 +61,6 @@ export const phoneModule: WebModule = {
       icon: Phone,
       order: 50,
       component: PhonePanel,
-      defaultWidth: 360,
       keywords: 'telefon anrufen 3cx wählen anrufliste kollegen',
     },
   ],

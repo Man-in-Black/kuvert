@@ -4,8 +4,9 @@
  * - eingeklappt: schmale Leiste mit den Symbolen untereinander
  * - aufgeklappt: das gewählte Panel, unten kleine Reiter zum Wechseln, Anpinnen und Einklappen
  * Angepinnt sitzt das Panel neben <main> und der Inhalt rückt zur Seite; sonst schwebt es
- * über dem Inhalt (Esc schließt). Mobil gibt es keine Leiste – Panels öffnen bildschirmfüllend
- * über die Aktionen im „Mehr“-Menü bzw. die Befehlspalette.
+ * über dem Inhalt (Esc schließt). Alle Panels teilen sich eine Breite. Mobil gibt es keine
+ * Leiste – Panels öffnen bildschirmfüllend über die Aktionen im „Mehr“-Menü bzw. die
+ * Befehlspalette.
  */
 import { Suspense, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronsRight, Pin, PinOff, X } from 'lucide-react';
@@ -17,17 +18,17 @@ import type { SidePanelDef } from '@/modules/types';
 import { useSidePanels } from './shell-helpers';
 import {
   closeSidePanel,
-  getSidePanelWidth,
   openSidePanel,
-  persistSidePanelWidths,
+  persistSidebarWidth,
   setSidebarPinned,
-  setSidePanelWidth,
+  setSidebarWidth,
   toggleSidePanel,
   useActiveSidePanel,
   useSidePanelState,
 } from './side-panel-store';
 
-const DEFAULT_WIDTH = 380;
+/** Eine Breite für alle Panels (ziehbar, gilt dann für alle) */
+const DEFAULT_WIDTH = 400;
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 760;
 
@@ -78,7 +79,7 @@ function Rail({ panels, active }: { panels: SidePanelDef[]; active: string | nul
 /* ═════════════════════════════ Aufgeklappt: Panel mit Reitern unten ═════════════════════════════ */
 
 function PanelFrame({ panel, panels, pinned, mobile }: { panel: SidePanelDef; panels: SidePanelDef[]; pinned: boolean; mobile: boolean }) {
-  const width = useSidePanelState((s) => s.width[panel.id]) ?? panel.defaultWidth ?? DEFAULT_WIDTH;
+  const width = useSidePanelState((s) => s.width) ?? DEFAULT_WIDTH;
   const Body = panel.component;
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
@@ -104,7 +105,7 @@ function PanelFrame({ panel, panels, pinned, mobile }: { panel: SidePanelDef; pa
       aria-label={panel.label}
       onKeyDown={onKeyDown}
     >
-      {!mobile && <ResizeHandle id={panel.id} width={width} />}
+      {!mobile && <ResizeHandle width={width} />}
       <div className="flex min-h-0 flex-1 flex-col">
         <ErrorBoundary key={panel.id} label={panel.label}>
           <Suspense
@@ -197,7 +198,7 @@ function PanelBadge({ useCount, small }: { useCount: () => number; small?: boole
 }
 
 /** Ziehen am linken Rand ändert die Breite (Doppelklick: Standardbreite) */
-function ResizeHandle({ id, width }: { id: string; width: number }) {
+function ResizeHandle({ width }: { width: number }) {
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -205,14 +206,14 @@ function ResizeHandle({ id, width }: { id: string; width: number }) {
     const el = e.currentTarget;
     el.setPointerCapture(e.pointerId);
     const move = (ev: PointerEvent) => {
-      setSidePanelWidth(id, Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width + startX - ev.clientX))), false);
+      setSidebarWidth(Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width + startX - ev.clientX))), false);
     };
     const up = () => {
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
       document.body.style.removeProperty('cursor');
-      if (getSidePanelWidth(id) !== undefined) persistSidePanelWidths();
+      persistSidebarWidth();
     };
     document.body.style.cursor = 'col-resize';
     el.addEventListener('pointermove', move);
@@ -225,7 +226,7 @@ function ResizeHandle({ id, width }: { id: string; width: number }) {
       aria-orientation="vertical"
       title="Breite ziehen (Doppelklick: zurücksetzen)"
       onPointerDown={onPointerDown}
-      onDoubleClick={() => setSidePanelWidth(id, null, true)}
+      onDoubleClick={() => setSidebarWidth(null, true)}
       className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize transition-colors hover:bg-primary/20 active:bg-primary/30"
     />
   );

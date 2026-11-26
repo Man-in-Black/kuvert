@@ -46,8 +46,6 @@ export interface SidePanelDef {
   icon: LucideIcon;
   order: number;
   component: ComponentType;
-  /** Startbreite in px (der Benutzer kann sie ziehen) */
-  defaultWidth?: number;
   /** Name als Aktion (Befehlspalette, mobil „Mehr“); Standard: „<label>-Leiste“ */
   actionLabel?: string;
   /** Zusätzliche Suchbegriffe für die Befehlspalette */

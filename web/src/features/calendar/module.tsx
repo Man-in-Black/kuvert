@@ -33,7 +33,6 @@ const mod: WebModule = {
       icon: CalendarDays,
       order: 10,
       component: CalendarPanel,
-      defaultWidth: 360,
       keywords: 'kalender termine agenda heute',
     },
   ],
