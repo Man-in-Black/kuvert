@@ -31,7 +31,8 @@
   --color-warning: var(--k-warning);
   --color-info: var(--k-info);
 
-  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
+  /* Emoji vor den Systemschriften: DejaVu Sans u. a. bringen schwarz-weiße Emoji mit, die sonst gewinnen */
+  --font-sans: 'Inter Variable', 'Inter', 'Apple Color Emoji', 'Segoe UI Emoji', 'Kuvert Emoji', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
 
   --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
