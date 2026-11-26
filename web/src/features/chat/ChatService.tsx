@@ -7,7 +7,7 @@ import { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { ChatConversation, ChatUser } from '@kuvert/shared';
+import { mentionsHandle, type ChatConversation, type ChatUser } from '@kuvert/shared';
 import { useServerEvent } from '@/lib/events';
 import { playBeep, pushActiveHere, showSystemNotification } from '@/features/notifications/push';
 import {
@@ -26,7 +26,7 @@ import {
   useMe,
   useUserMap,
 } from './api';
-import { previewOf } from './format';
+import { bodyOf, previewOf } from './format';
 
 export function ChatService() {
   const qc = useQueryClient();
@@ -66,12 +66,15 @@ export function ChatService() {
     // Anruf-Beiträge melden sich über chat.call (Klingeln), nicht als Nachricht
     if (m.kind !== 'text' || m.call || !m.senderId || m.senderId === me || looking || !settings.notify) return;
     const conv = qc.getQueryData<ChatConversation[]>(chatKeys.conversations)?.find((c) => c.id === e.conversationId);
-    if (conv?.muted) return;
-    // Gruppen/Kanäle aus Mattermost/Talk: nur bei Erwähnung (sonst würde jeder Kanal-Beitrag melden)
-    if (conv?.source && conv.kind === 'group' && !m.mention) return;
+    // Erwähnung: verbundene Dienste melden sie selbst, im Kuvert-Chat @kürzel bzw. @all
+    const mentioned = conv?.source ? !!m.mention : mentionsHandle(m.body, users.get(me ?? '')?.mention);
+    // Stummgeschaltet: nur bei Erwähnung
+    if (conv?.muted && !mentioned) return;
+    // Gruppen/Kanäle aus Mattermost/Talk/Teams: nur bei Erwähnung (sonst würde jeder Kanal-Beitrag melden)
+    if (conv?.source && conv.kind === 'group' && !mentioned) return;
     const sender = users.get(m.senderId)?.name ?? m.senderName ?? 'Neue Nachricht';
     const title = conv?.kind === 'group' ? `${sender} in ${conversationTitle(conv, me, users)}` : sender;
-    notify(e.conversationId, title, previewOf(m.body, m.attachments.length) || 'Neue Nachricht');
+    notify(e.conversationId, title, previewOf(bodyOf(m), m.attachments.length) || 'Neue Nachricht');
   });
 
   useServerEvent('chat.message.updated', (e) => {

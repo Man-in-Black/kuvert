@@ -23,7 +23,7 @@ import {
 } from './api';
 import { ConversationAvatar } from './components';
 import { ConversationView } from './ConversationView';
-import { previewOf, systemText } from './format';
+import { bodyOf, previewOf, systemText } from './format';
 import { NewChatDialog, type NewChatMode } from './NewChatDialog';
 
 export default function ChatPage() {
@@ -317,7 +317,7 @@ function ConversationList({
                     {formatListDate(m.createdAt)}
                   </span>
                   <span className="line-clamp-2 text-sm">
-                    <Highlight text={previewOf(m.body, m.attachments.length)} term={debounced} />
+                    <Highlight text={previewOf(bodyOf(m), m.attachments.length)} term={debounced} />
                   </span>
                 </button>
               );
@@ -384,7 +384,7 @@ function ConversationRow({ c, me, users, active, onClick }: { c: ChatConversatio
     if (last.kind === 'system') preview = systemText(last.body, users, me);
     else if (last.deleted) preview = 'Nachricht gelöscht';
     else {
-      const text = previewOf(last.body, last.attachments.length);
+      const text = previewOf(bodyOf(last), last.attachments.length);
       const senderName = users.get(last.senderId ?? '')?.name ?? last.senderName;
       const prefix = last.senderId === me ? 'Du: ' : c.kind === 'group' ? `${senderName?.split(' ')[0] ?? 'Jemand'}: ` : '';
       preview = prefix + text;

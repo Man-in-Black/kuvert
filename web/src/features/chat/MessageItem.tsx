@@ -1,12 +1,14 @@
-import { memo, useState } from 'react';
+import { memo, useState, type ReactNode } from 'react';
+import { format } from 'date-fns';
+import { de } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { Check, CheckCheck, Copy, Download, File as FileIcon, MoreHorizontal, Pencil, Phone, PhoneOff, Reply, SmilePlus, Trash2 } from 'lucide-react';
-import { CHAT_QUICK_REACTIONS, type ChatAttachment, type ChatCapabilities, type ChatMessage, type ChatUser } from '@kuvert/shared';
+import { CHAT_QUICK_REACTIONS, type ChatAttachment, type ChatCapabilities, type ChatCard, type ChatMessage, type ChatUser } from '@kuvert/shared';
 import { Dropdown, Modal } from '@/components/ui';
 import { cn, formatSize } from '@/lib/utils';
 import { FULL_CAPS, fileUrl, userName } from './api';
 import { EmojiGrid, Popover, UserAvatar } from './components';
-import { isEmojiOnly, previewOf, renderBody, systemText, timeOf } from './format';
+import { bodyOf, isEmojiOnly, previewOf, renderBody, systemText, timeOf } from './format';
 
 export interface MessageItemProps {
   message: ChatMessage;
@@ -85,14 +87,15 @@ function MessageItemImpl(p: MessageItemProps) {
   const sender = m.senderId ? users.get(m.senderId) : undefined;
   const senderLabel = sender?.name ?? m.senderName ?? 'Ehemaliger Benutzer';
   const showAvatar = p.isGroup && !mine;
-  const emojiOnly = !m.deleted && !m.attachments.length && !m.replyTo && isEmojiOnly(m.body);
+  const cards = m.deleted ? [] : (m.cards ?? []);
+  const emojiOnly = !m.deleted && !m.attachments.length && !m.replyTo && !cards.length && isEmojiOnly(m.body);
   const images = m.attachments.filter(isImage);
   const files = m.attachments.filter((a) => !isImage(a));
   const canDelete = !m.deleted && caps.delete && (mine || p.canModerate);
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(m.body);
+      await navigator.clipboard.writeText(bodyOf(m));
       toast.success('Text kopiert');
     } catch {
       toast.error('Kopieren nicht möglich');
@@ -118,7 +121,12 @@ function MessageItemImpl(p: MessageItemProps) {
       )}
 
       <div className={cn('flex min-w-0 max-w-[min(78%,680px)] flex-col', mine ? 'items-end' : 'items-start')}>
-        {p.first && showAvatar && <div className="mb-0.5 px-1 text-xs font-medium text-muted">{senderLabel}</div>}
+        {p.first && showAvatar && (
+          <div className="mb-0.5 flex items-center gap-1.5 px-1 text-xs font-medium text-muted">
+            {senderLabel}
+            {m.bot && <span className="rounded bg-surface-2 px-1 py-px text-[9.5px] font-semibold uppercase tracking-wide text-subtle ring-1 ring-border">Bot</span>}
+          </div>
+        )}
 
         <div
           tabIndex={0}
@@ -194,6 +202,13 @@ function MessageItemImpl(p: MessageItemProps) {
             <span>Diese Nachricht wurde gelöscht</span>
           ) : (
             m.body && <span className="whitespace-pre-wrap">{renderBody(m.body)}</span>
+          )}
+          {cards.length > 0 && (
+            <div className={cn('flex flex-col gap-1.5', m.body.trim() ? 'mb-1 mt-1.5' : 'my-1')}>
+              {cards.map((c, i) => (
+                <MessageCard key={i} card={c} mine={mine} onMediaLoad={p.onMediaLoad} />
+              ))}
+            </div>
           )}
           {!emojiOnly && time}
           {emojiOnly && <span className="ml-1 align-bottom text-[10.5px] text-subtle">{timeOf(m.createdAt)}</span>}
@@ -281,7 +296,7 @@ function MessageItemImpl(p: MessageItemProps) {
             }
             items={[
               ...(caps.reply ? [{ label: 'Antworten', icon: <Reply />, onClick: () => p.onReply(m) }] : []),
-              ...(m.body ? [{ label: 'Text kopieren', icon: <Copy />, onClick: () => void copy() }] : []),
+              ...(bodyOf(m) ? [{ label: 'Text kopieren', icon: <Copy />, onClick: () => void copy() }] : []),
               ...(mine && caps.edit ? [{ label: 'Bearbeiten', icon: <Pencil />, onClick: () => p.onEdit(m) }] : []),
               ...(canDelete ? [{ divider: true, label: '' }, { label: 'Löschen', icon: <Trash2 />, danger: true, onClick: () => p.onDelete(m) }] : []),
             ]}
@@ -304,6 +319,53 @@ function MessageItemImpl(p: MessageItemProps) {
 }
 
 export const MessageItem = memo(MessageItemImpl);
+
+/** Formatierte Meldung eines Bots/Webhooks (Mattermost-Nachrichtenanhang) */
+function MessageCard({ card: c, mine, onMediaLoad }: { card: ChatCard; mine: boolean; onMediaLoad(): void }) {
+  const link = (href: string | null | undefined, children: ReactNode) =>
+    href ? (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="underline decoration-current/40 underline-offset-2 hover:decoration-current">
+        {children}
+      </a>
+    ) : (
+      children
+    );
+  return (
+    <div className="min-w-0">
+      {c.pretext && <div className="mb-1 whitespace-pre-wrap">{renderBody(c.pretext)}</div>}
+      <div
+        className={cn('min-w-0 rounded-md border-l-4 px-2.5 py-1.5 text-[13px]', mine ? 'bg-black/10' : 'bg-surface-2')}
+        style={{ borderLeftColor: c.color ?? 'var(--color-border-strong)' }}
+      >
+        {c.author && <div className="mb-0.5 text-xs font-medium opacity-80">{link(c.authorUrl, c.author)}</div>}
+        {c.title && <div className="mb-0.5 font-semibold">{link(c.titleUrl, renderBody(c.title))}</div>}
+        {c.text && <div className="whitespace-pre-wrap">{renderBody(c.text)}</div>}
+        {!!c.fields?.length && (
+          <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
+            {c.fields.map((f, i) => (
+              <div key={i} className={cn('min-w-0', !f.short && 'col-span-2')}>
+                {f.title && <div className="text-xs font-semibold opacity-80">{renderBody(f.title)}</div>}
+                {f.value && <div className="whitespace-pre-wrap">{renderBody(f.value)}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+        {c.imageUrl && (
+          <a href={c.imageUrl} target="_blank" rel="noopener noreferrer" className="mt-1.5 block">
+            <img src={c.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onLoad={onMediaLoad} className="block max-h-72 max-w-full rounded" />
+          </a>
+        )}
+        {(c.footer || c.ts) && (
+          <div className="mt-1 text-[11px] opacity-70">
+            {c.footer && renderBody(c.footer)}
+            {c.footer && c.ts && ' · '}
+            {c.ts && format(new Date(c.ts), 'dd.MM.yyyy HH:mm', { locale: de })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** Dauer eines beendeten Anrufs, z. B. "Dauer 12 Min." */
 function callDuration(start: string, end: string): string {

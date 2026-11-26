@@ -4,10 +4,11 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { AddressBook, AddressSuggestion, CalendarEvent, CalendarInfo, Contact, EventInput, Task, TaskList } from '@kuvert/shared';
+import type { AddressBook, AddressSuggestion, CalendarEvent, CalendarInfo, Contact, EventInput, PlaceDetails, PlaceSuggestion, Task, TaskList } from '@kuvert/shared';
 import { getDb } from '../core/db.js';
 import { BadRequestError } from '../core/errors.js';
 import { contactMatches } from '../core/contact-search.js';
+import { autocompletePlaces, placeDetails } from '../core/places.js';
 import { SOURCE_BOOK_ID, type ContactSource } from '../core/hooks.js';
 import type { AccountRecord, ModuleContext } from '../core/module.js';
 import { uploads } from '../core/uploads.js';
@@ -77,6 +78,33 @@ export async function pimRoutes(app: FastifyInstance, ctx: ModuleContext) {
   const { accounts } = ctx;
 
   /* ═════════════════════════════ Kalender ═════════════════════════════ */
+
+  /* Ortssuche (Google Places) für das Feld „Ort“ im Termin-Dialog */
+  const placeQuery = z.object({
+    q: z.string().trim().min(2).max(200),
+    session: z.string().max(64).optional(),
+    lang: z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/).optional(),
+  });
+  app.get('/api/calendar/places', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req): Promise<PlaceSuggestion[]> => {
+    const q = parse(placeQuery, req.query);
+    return autocompletePlaces(q.q, q.session, q.lang);
+  });
+
+  const placeDetailQuery = z.object({
+    name: z.string().max(300).optional(),
+    session: z.string().max(64).optional(),
+    lang: z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/).optional(),
+  });
+  app.get<{ Params: { placeId: string } }>(
+    '/api/calendar/places/:placeId',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req): Promise<PlaceDetails> => {
+      if (!/^[\w-]{1,300}$/.test(req.params.placeId)) throw new BadRequestError('Ungültige Orts-ID');
+      const q = parse(placeDetailQuery, req.query);
+      return placeDetails(req.params.placeId, q.name, q.session, q.lang);
+    },
+  );
+
 
   app.get('/api/calendar/calendars', async (req) => {
     const accs = accounts.withCapability(req.user.id, 'calendar');

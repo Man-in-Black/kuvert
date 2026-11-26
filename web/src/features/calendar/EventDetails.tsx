@@ -22,6 +22,7 @@ import { Avatar, Badge, Button, IconButton, useConfirm } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { deleteEvent, invalidateEvents, respondToEvent } from './api';
+import { mapsSearchUrl } from './LocationInput';
 import { describeRRule } from './rrule';
 import { SHOW_AS_LABELS, eventColor, eventDescription, formatEventRange } from './utils';
 
@@ -168,6 +169,11 @@ export function EventDetails({
         {event.location && (
           <Row icon={<MapPin />}>
             <Linkified text={event.location} />
+            {!/^(https?:\/\/|www\.)/i.test(event.location.trim()) && (
+              <a href={mapsSearchUrl(event.location)} target="_blank" rel="noopener noreferrer" className="block text-xs text-primary hover:underline">
+                In Google Maps öffnen
+              </a>
+            )}
           </Row>
         )}
 

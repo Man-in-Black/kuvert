@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Plus, X } from 'lucide-react';
 import type { UserSettings } from '@kuvert/shared';
 import { errorMessage } from '@/lib/api';
+import { desktop } from '@/lib/desktop';
 import { useSettings, useUpdateSettings } from '@/lib/queries';
 import { Button, Input, Select, Switch, Tabs } from '@/components/ui';
 import { canRegisterMailtoHandler, registerMailtoHandler } from '@/features/mail/mailto';
@@ -51,8 +52,43 @@ function DelayInput({ value, onCommit }: { value: number; onCommit: (v: number) 
   );
 }
 
+/** Desktop-App als E-Mail-Programm des Systems festlegen */
+function DesktopMailtoRow({ app }: { app: NonNullable<typeof desktop> }) {
+  const [isDefault, setIsDefault] = useState<boolean | null>(null);
+  useEffect(() => {
+    void app.isDefaultMailClient().then(setIsDefault, () => setIsDefault(false));
+  }, [app]);
+  const register = async () => {
+    try {
+      const ok = await app.setDefaultMailClient();
+      if (app.platform === 'win32') {
+        toast.info('Bitte in den Windows-Einstellungen Kuvert für E-Mail wählen');
+        return;
+      }
+      setIsDefault(ok ? await app.isDefaultMailClient() : false);
+    } catch (err) {
+      toast.error('Konnte nicht festgelegt werden', { description: errorMessage(err) });
+    }
+  };
+  return (
+    <SettingRow
+      label="E-Mail-Links (mailto:)"
+      hint={
+        isDefault
+          ? 'Die Kuvert-App ist das E-Mail-Programm des Systems – mailto:-Links aus anderen Programmen öffnen eine neue Nachricht in Kuvert'
+          : 'Die Kuvert-App als E-Mail-Programm des Systems festlegen – mailto:-Links aus anderen Programmen öffnen dann eine neue Nachricht in Kuvert'
+      }
+    >
+      <Button className="w-full justify-center" disabled={!!isDefault} onClick={() => void register()}>
+        {isDefault ? 'Festgelegt' : 'Kuvert-App verwenden'}
+      </Button>
+    </SettingRow>
+  );
+}
+
 /** Kuvert im Browser als Programm für mailto:-Links anmelden */
 function MailtoRow() {
+  if (desktop) return <DesktopMailtoRow app={desktop} />;
   const supported = canRegisterMailtoHandler();
   const register = () => {
     try {

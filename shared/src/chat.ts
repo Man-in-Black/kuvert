@@ -12,6 +12,8 @@ export interface ChatUser {
   department?: string;
   /** Vom Admin gesperrt – bleibt für Namen in alten Nachrichten sichtbar, ist aber nicht auswählbar */
   disabled?: boolean;
+  /** Text nach "@", mit dem man die Person im Chat erwähnt (Kuvert: E-Mail-Name, Mattermost: Benutzername …) */
+  mention?: string;
 }
 
 export interface ChatMember {
@@ -68,6 +70,38 @@ export interface ChatMessage {
   mention?: boolean;
   /** Anruf-Beitrag (Mattermost Calls) – wird als Karte statt als Text angezeigt */
   call?: ChatCallInfo | null;
+  /** Formatierte Meldungen von Bots/Webhooks (Mattermost-Nachrichtenanhänge) */
+  cards?: ChatCard[];
+  /** Beitrag eines Bots oder Webhooks (auch wenn er über das eigene Konto eingeliefert wurde) */
+  bot?: boolean;
+}
+
+/** Formatierte Meldung (Mattermost "message attachment" / Slack-Format) */
+export interface ChatCard {
+  /** Farbe des Randstreifens (CSS-Farbe) */
+  color?: string | null;
+  /** Text über der Karte */
+  pretext?: string | null;
+  author?: string | null;
+  authorUrl?: string | null;
+  title?: string | null;
+  titleUrl?: string | null;
+  /** Haupttext (leichtes Markdown) */
+  text?: string | null;
+  fields?: { title: string; value: string; short: boolean }[];
+  imageUrl?: string | null;
+  footer?: string | null;
+  /** Zeitpunkt (ISO) */
+  ts?: string | null;
+}
+
+/** Klartext der Karten für Vorschau, Suche und Benachrichtigungen */
+export function cardsText(cards: ChatCard[] | null | undefined): string {
+  if (!cards?.length) return '';
+  return cards
+    .map((c) => [c.pretext, c.title, c.text, ...(c.fields ?? []).map((f) => `${f.title}: ${f.value}`)].filter(Boolean).join('\n'))
+    .filter(Boolean)
+    .join('\n');
 }
 
 /** Anruf-Beitrag im Verlauf */
@@ -220,6 +254,26 @@ export interface ChatSettings {
 }
 
 export const DEFAULT_CHAT_SETTINGS: ChatSettings = { notify: true, sound: true, enterToSend: true, listSort: 'recent' };
+
+/* ───────────────────────────── Erwähnungen ───────────────────────────── */
+
+/** Erwähnungen, die alle Mitglieder einer Gruppe betreffen */
+export const MENTION_ALL_HANDLES = ['all', 'channel', 'here'] as const;
+
+/** Erwähnungs-Kürzel eines Kuvert-Benutzers: Teil der E-Mail-Adresse vor dem @ */
+export function mentionHandle(email: string | null | undefined): string | undefined {
+  const local = (email ?? '').split('@')[0]?.trim().toLowerCase();
+  return local && /^[\w.+-]+$/.test(local) ? local : undefined;
+}
+
+const reEscape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Erwähnt der Text die Person (@kürzel) oder alle (@all, @channel, @here)? */
+export function mentionsHandle(body: string, handle: string | null | undefined): boolean {
+  if (!body.includes('@')) return false;
+  const names = [...MENTION_ALL_HANDLES, ...(handle ? [reEscape(handle)] : [])];
+  return new RegExp(`(?<![\\w@.])@(${names.join('|')})(?![\\w-]|\\.\\w)`, 'i').test(body);
+}
 
 /** Schnell-Reaktionen in der Nachrichtenleiste */
 export const CHAT_QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🎉'] as const;

@@ -1,5 +1,6 @@
 /** Hilfsfunktionen für Desktop-Benachrichtigungen, Ton und Web Push. */
 import { api } from '@/lib/api';
+import { desktop } from '@/lib/desktop';
 
 export function notificationsSupported(): boolean {
   return typeof window !== 'undefined' && 'Notification' in window;
@@ -41,7 +42,8 @@ export async function showSystemNotification(title: string, opts: NotificationOp
   if (!notificationsSupported() || Notification.permission !== 'granted') return false;
   const options: NotificationOptions = { icon: NOTIFICATION_ICON, badge: NOTIFICATION_BADGE, ...opts };
   try {
-    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : undefined;
+    // Desktop-App: direkt über den Notification-Konstruktor (Service-Worker-Benachrichtigungen kann Electron nicht)
+    const reg = !desktop && 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : undefined;
     if (reg?.active) {
       await reg.showNotification(title, { ...options, data: { url } });
       return true;
@@ -52,6 +54,7 @@ export async function showSystemNotification(title: string, opts: NotificationOp
   try {
     const n = new Notification(title, options);
     n.onclick = () => {
+      desktop?.show();
       window.focus();
       onClick?.();
       n.close();
@@ -96,6 +99,8 @@ export function playBeep() {
 /* ───────────── Web Push ───────────── */
 
 export function pushSupported(): boolean {
+  // Desktop-App: kein Web Push (Electron kann sich nicht anmelden) – sie benachrichtigt, solange sie läuft
+  if (desktop) return false;
   return 'serviceWorker' in navigator && 'PushManager' in window && notificationsSupported();
 }
 

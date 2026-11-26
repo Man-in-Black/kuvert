@@ -187,6 +187,20 @@ export function ServicesSection() {
       >
         <FieldRow label="Client-ID" {...field('google', 'clientId')} placeholder="…apps.googleusercontent.com" />
         <FieldRow label="Clientschlüssel" {...field('google', 'clientSecret')} />
+        <FieldRow
+          label="Places-API-Schlüssel (optional)"
+          {...field('google', 'placesApiKey')}
+          hint={
+            <>
+              Für die Ortssuche im Termin-Dialog (Firmen, Restaurants, Sehenswürdigkeiten, Adressen). In der Google Cloud die{' '}
+              <a className="text-primary hover:underline" href="https://console.cloud.google.com/apis/library/places.googleapis.com" target="_blank" rel="noreferrer">
+                Places API (New)
+              </a>{' '}
+              aktivieren und unter „Anmeldedaten“ einen API-Schlüssel anlegen – am besten auf die Places API beschränkt. Abrechnung über das Google-Cloud-Konto; Nutzer
+              sehen die Suche nach dem nächsten Neuladen.
+            </>
+          }
+        />
         <Guide title="So richtest du den OAuth-Client in der Google Cloud ein">
           <ol className="list-decimal space-y-1.5 pl-4">
             <li>

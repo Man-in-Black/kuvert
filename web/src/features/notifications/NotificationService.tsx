@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { CalendarEvent, MessageSummary } from '@kuvert/shared';
+import { desktop } from '@/lib/desktop';
 import { useServerEvent } from '@/lib/events';
 import { useAccountMap, useSettings } from '@/lib/queries';
 import { displayAddress } from '@/lib/utils';
@@ -13,6 +14,10 @@ import { playBeep, pushActiveHere, showSystemNotification } from './push';
 import { messageUrl } from '@/features/mail/links';
 
 const TITLE_PREFIX = /^\(\d+\)\s*/;
+
+/** Kuvert im Hintergrund? In der Desktop-App zählt auch ein Fenster ohne Fokus (hinter anderen Programmen) –
+ *  dort zeigt der Titelzähler den roten Punkt im Infobereich, und Hinweise kommen als Systembenachrichtigung. */
+const inBackground = () => document.hidden || (!!desktop && !document.hasFocus());
 
 function mailUrl(accountId: string, m: MessageSummary): string {
   return messageUrl({ accountId, folderId: m.folderId, id: m.id });
@@ -31,16 +36,20 @@ export function NotificationService() {
   const navigate = useNavigate();
   const unseen = useRef(0);
 
-  // Titelzähler zurücksetzen, sobald der Tab wieder sichtbar ist
+  // Titelzähler zurücksetzen, sobald der Tab wieder sichtbar ist (Desktop-App: das Fenster den Fokus bekommt)
   useEffect(() => {
     const onVis = () => {
-      if (!document.hidden) {
+      if (!inBackground()) {
         unseen.current = 0;
         document.title = document.title.replace(TITLE_PREFIX, '');
       }
     };
     document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', onVis);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onVis);
+    };
   }, []);
 
   /** Systembenachrichtigung – bei verborgenem Tab nicht, wenn auf diesem Gerät Web Push aktiv ist
@@ -57,7 +66,7 @@ export function NotificationService() {
     const msgs = e.messages.filter((m) => !m.seen);
     if (!msgs.length) return;
 
-    if (document.hidden) {
+    if (inBackground()) {
       unseen.current += msgs.length;
       document.title = `(${unseen.current}) ${document.title.replace(TITLE_PREFIX, '')}`;
       if (msgs.length > 3) {

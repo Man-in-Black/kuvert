@@ -5,16 +5,32 @@
 import { Fragment, type ReactNode } from 'react';
 import { format, isSameDay, isToday, isYesterday } from 'date-fns';
 import { de } from 'date-fns/locale';
-import type { ChatSystemEvent, ChatUser } from '@kuvert/shared';
+import { cardsText, type ChatMessage, type ChatSystemEvent, type ChatUser } from '@kuvert/shared';
 import { userName } from './api';
 import { parseMarkdown, type Inline, type Line } from './markdown';
+
+/** @name, @all … hervorheben (nicht in E-Mail-Adressen) */
+const MENTION_SPLIT = /((?<![\w@.])@[\w+-]+(?:\.[\w+-]+)*)/;
+
+function withMentions(text: string, key: string): ReactNode {
+  if (!text.includes('@')) return text;
+  return text.split(MENTION_SPLIT).map((part, i) =>
+    i % 2 ? (
+      <span key={`${key}-m${i}`} className="rounded bg-black/[.07] px-0.5 font-semibold dark:bg-white/10">
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+}
 
 function renderInline(nodes: Inline[], key: string): ReactNode[] {
   return nodes.map((n, i) => {
     const k = `${key}-${i}`;
     switch (n.t) {
       case 'text':
-        return <Fragment key={k}>{n.v}</Fragment>;
+        return <Fragment key={k}>{withMentions(n.v, k)}</Fragment>;
       case 'code':
         return (
           <code key={k} className="rounded bg-black/10 px-1 py-px font-mono text-[0.9em] dark:bg-white/10">
@@ -90,6 +106,11 @@ export function isEmojiOnly(body: string): boolean {
   if (stripped.length) return false;
   const count = [...new Intl.Segmenter('de', { granularity: 'grapheme' }).segment(s)].filter((g) => g.segment.trim()).length;
   return count >= 1 && count <= 3;
+}
+
+/** Text einer Nachricht; formatierte Bot-Meldungen ohne eigenen Text liefern den Text ihrer Karten */
+export function bodyOf(m: Pick<ChatMessage, 'body' | 'cards'>): string {
+  return m.body.trim() ? m.body : cardsText(m.cards);
 }
 
 /** Einzeilige Vorschau (Liste, Antwortzitat, Benachrichtigung) */

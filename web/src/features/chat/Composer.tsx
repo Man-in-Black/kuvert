@@ -1,21 +1,33 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ALargeSmall, File as FileIcon, Loader2, Paperclip, Pencil, Reply, SendHorizontal, Smile, X } from 'lucide-react';
-import type { ChatCapabilities, ChatMessage, ChatUser, UploadInfo } from '@kuvert/shared';
+import type { ChatBridgeType, ChatCapabilities, ChatConversation, ChatMessage, ChatUser, UploadInfo } from '@kuvert/shared';
 import { Button, IconButton } from '@/components/ui';
 import { errorMessage, uploadFile } from '@/lib/api';
 import { cn, formatSize } from '@/lib/utils';
-import { FULL_CAPS, applyNewMessage, chatApi, drafts, upsertMessage, useChatSettings, userName } from './api';
+import { FULL_CAPS, applyNewMessage, chatApi, drafts, upsertMessage, useChatSettings, useParticipants, userName } from './api';
 import type { Editor } from '@tiptap/react';
-import { ChatEditor, FormatBar, type ChatEditorHandle } from './ChatEditor';
+import { ChatEditor, FormatBar, type ChatEditorHandle, type MentionItem } from './ChatEditor';
 import { EmojiGrid, Popover } from './components';
-import { previewOf } from './format';
+import { bodyOf, previewOf } from './format';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const MAX_FILES = 10;
 const MAX_LENGTH = 10_000;
 const TOOLBAR_KEY = 'kuvert.chat.formatbar';
+
+/** Erwähnungen für alle, je nach Dienst (Teams-Chats kennen keine) */
+function allMentions(kind: ChatConversation['kind'], source: ChatBridgeType | undefined): MentionItem[] {
+  if (kind !== 'group' || source === 'teams') return [];
+  const all: MentionItem = { handle: 'all', label: 'Alle', detail: '@all' };
+  if (source !== 'mattermost') return [all];
+  return [
+    { ...all, label: 'Alle Mitglieder' },
+    { handle: 'channel', label: 'Alle im Kanal', detail: '@channel' },
+    { handle: 'here', label: 'Alle, die online sind', detail: '@here' },
+  ];
+}
 
 interface PendingFile {
   key: string;
@@ -45,6 +57,9 @@ interface Props {
   onSent(): void;
   /** Möglichkeiten der Unterhaltung (Dateien, Tippen …) */
   caps?: ChatCapabilities;
+  /** Art und Herkunft der Unterhaltung (für @-Erwähnungen) */
+  kind: ChatConversation['kind'];
+  source?: ChatBridgeType;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, ref) {
@@ -67,6 +82,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, r
   const fileInput = useRef<HTMLInputElement>(null);
   const lastTyping = useRef(0);
   const stash = useRef<string | null>(null);
+
+  // @-Erwähnungen: Mitglieder erst laden, wenn jemand @ tippt
+  const [mentionOn, setMentionOn] = useState(false);
+  const { data: participants } = useParticipants(p.conversationId, mentionOn);
+  const mentions = useMemo<MentionItem[] | null>(() => {
+    if (!participants) return null;
+    const people = participants
+      .filter((u) => u.id !== p.me && u.mention && !u.disabled)
+      .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name, 'de'))
+      .map((u): MentionItem => ({ handle: u.mention!, label: u.name, detail: `@${u.mention}`, user: u }));
+    return [...allMentions(p.kind, p.source), ...people];
+  }, [participants, p.me, p.kind, p.source]);
 
   // Entwurf merken
   useEffect(() => {
@@ -195,7 +222,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, r
             ) : (
               <>
                 <span className="font-medium">Antwort an {userName(p.replyTo!.senderId, p.users, p.me)}: </span>
-                <span className="text-muted">{previewOf(p.replyTo!.body, p.replyTo!.attachments.length)}</span>
+                <span className="text-muted">{previewOf(bodyOf(p.replyTo!), p.replyTo!.attachments.length)}</span>
               </>
             )}
           </span>
@@ -289,6 +316,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, r
             }}
             onFiles={addFiles}
             onReady={setEditor}
+            mentions={mentions}
+            onMentionStart={() => setMentionOn(true)}
           />
           <Button
             variant="primary"

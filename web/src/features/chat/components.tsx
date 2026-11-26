@@ -1,5 +1,6 @@
 /** Kleine Bausteine des Chats: Avatare mit Online-Status, Emoji-Auswahl, Personenauswahl. */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, Search, Users } from 'lucide-react';
 import type { ChatConversation, ChatUser } from '@kuvert/shared';
 import { Avatar, Input } from '@/components/ui';
@@ -50,6 +51,10 @@ export function ConversationAvatar({ conversation, users, me, size = 40 }: { con
 
 /* ───────────────────────────── Popover ───────────────────────────── */
 
+/**
+ * Aufklappfeld am Auslöser. Wird per Portal in den Body gerendert, damit es nicht von
+ * Containern mit overflow-hidden/-auto (Eingabefeld, Nachrichtenliste) abgeschnitten wird.
+ */
 export function Popover({
   trigger,
   children,
@@ -68,9 +73,46 @@ export function Popover({
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; below: boolean } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const place = () => {
+      const anchor = ref.current?.getBoundingClientRect();
+      const box = panel.current?.getBoundingClientRect();
+      if (!anchor || !box) return;
+      const gap = 6;
+      const margin = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      // Bevorzugte Seite, bei Platzmangel auf die andere ausweichen
+      let below = side === 'bottom';
+      if (below && anchor.bottom + gap + box.height > vh - margin && anchor.top - gap - box.height >= margin) below = false;
+      else if (!below && anchor.top - gap - box.height < margin && anchor.bottom + gap + box.height <= vh - margin) below = true;
+      const top = below ? anchor.bottom + gap : anchor.top - gap - box.height;
+      let left = align === 'right' ? anchor.right - box.width : anchor.left;
+      left = Math.max(margin, Math.min(left, vw - box.width - margin));
+      setPos({ left, top: Math.max(margin, top), below });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open, side, align]);
+
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onOpenChange(false);
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !panel.current?.contains(t)) onOpenChange(false);
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
@@ -84,21 +126,26 @@ export function Popover({
       document.removeEventListener('keydown', onKey, true);
     };
   }, [open, onOpenChange]);
+
   return (
     <div ref={ref} className="relative inline-flex">
       {trigger}
-      {open && (
-        <div
-          className={cn(
-            'absolute z-40 animate-scale-in rounded-xl border border-border bg-surface p-2 shadow-pop',
-            side === 'top' ? 'bottom-full mb-1.5 origin-bottom' : 'top-full mt-1.5 origin-top',
-            align === 'right' ? 'right-0' : 'left-0',
-            className,
-          )}
-        >
-          {children}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={panel}
+            className={cn(
+              'fixed z-[60] rounded-xl border border-border bg-surface p-2 shadow-pop',
+              pos && 'animate-scale-in',
+              pos?.below ? 'origin-top' : 'origin-bottom',
+              className,
+            )}
+            style={pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0, visibility: 'hidden' }}
+          >
+            {children}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

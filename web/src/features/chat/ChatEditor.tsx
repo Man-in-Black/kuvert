@@ -3,14 +3,16 @@
  * umgesetzt (**fett**, _kursiv_, ~~durch~~, `Code`, ``` Codeblock, > Zitat, - / 1. Liste),
  * gespeichert wird weiterhin Markdown (editorToMarkdown).
  */
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
-import { EditorContent, Extension, useEditor, useEditorState, type Editor } from '@tiptap/react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { EditorContent, Extension, InputRule, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Placeholder } from '@tiptap/extensions';
-import { Bold, Code, Italic, Link as LinkIcon, List, ListOrdered, Quote, SquareCode, Strikethrough } from 'lucide-react';
+import { TEXT_SMILEYS, type ChatUser } from '@kuvert/shared';
+import { AtSign, Bold, Code, Italic, Link as LinkIcon, List, ListOrdered, Quote, SquareCode, Strikethrough } from 'lucide-react';
 import { Button, Input } from '@/components/ui';
 import { cn } from '@/lib/utils';
-import { Popover } from './components';
+import { Popover, UserAvatar } from './components';
 import { editorToMarkdown, markdownToHtml } from './markdown';
 import './chat.css';
 
@@ -35,12 +37,91 @@ interface Props {
   onFiles(files: File[]): void;
   /** TipTap-Instanz für die Formatleiste */
   onReady?(editor: Editor | null): void;
+  /** Vorschläge für @-Erwähnungen (null = noch nicht geladen) */
+  mentions?: MentionItem[] | null;
+  /** Ein @ wurde getippt → Vorschläge laden */
+  onMentionStart?(): void;
 }
+
+/** Eintrag der @-Vorschlagsliste */
+export interface MentionItem {
+  /** Text nach dem @ */
+  handle: string;
+  label: string;
+  detail?: string;
+  user?: ChatUser;
+}
+
+interface MentionQuery {
+  query: string;
+  from: number;
+  to: number;
+  left: number;
+  top: number;
+}
+
+const MENTION_BEFORE = /(?:^|[\s(])@([\w.+-]*)$/;
+const MAX_MENTIONS = 8;
+
+function rankMention(it: MentionItem, q: string): number {
+  if (!q) return 1;
+  const h = it.handle.replace(/^"/, '').toLowerCase();
+  const l = it.label.toLowerCase();
+  if (h.startsWith(q)) return 0;
+  if (l.startsWith(q) || l.split(/\s+/).some((w) => w.startsWith(q))) return 1;
+  if (h.includes(q) || l.includes(q)) return 2;
+  return -1;
+}
+
+/** :) ;-) <3 … am Wortanfang beim Tippen durch Emojis ersetzen (Rücktaste macht es rückgängig) */
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+const SMILEY_CODES = [...TEXT_SMILEYS.keys()].sort((a, b) => b.length - a.length).map(escapeRe);
+const SMILEY_RE = new RegExp(`(?:^|\\s)(${SMILEY_CODES.join('|')})$`);
+
+const Smileys = Extension.create({
+  name: 'chatSmileys',
+  addInputRules() {
+    return [
+      new InputRule({
+        find: SMILEY_RE,
+        handler: ({ state, range, match }) => {
+          const code = match[1]!;
+          const emoji = TEXT_SMILEYS.get(code);
+          if (!emoji) return null;
+          const start = range.from + match[0].length - code.length;
+          state.tr.insertText(emoji, start, range.to);
+        },
+      }),
+    ];
+  },
+});
 
 export const ChatEditor = forwardRef<ChatEditorHandle, Props>(function ChatEditor(p, ref) {
   // Aktuelle Callbacks für die einmal erzeugten TipTap-Erweiterungen
   const cb = useRef(p);
   cb.current = p;
+
+  /* ─── @-Erwähnungen ─── */
+  const [mq, setMq] = useState<MentionQuery | null>(null);
+  const [mIndex, setMIndex] = useState(0);
+  /** Mit Esc geschlossen – erst bei einem neuen @ wieder anzeigen */
+  const dismissed = useRef<number | null>(null);
+  const detectMention = (e: Editor) => {
+    const sel = e.state.selection;
+    if (!sel.empty || e.isActive('code') || e.isActive('codeBlock')) return setMq(null);
+    const $from = sel.$from;
+    const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 64), $from.parentOffset, undefined, ' ');
+    const m = MENTION_BEFORE.exec(before);
+    if (!m) {
+      dismissed.current = null;
+      return setMq(null);
+    }
+    const from = sel.from - m[1]!.length - 1;
+    if (dismissed.current === from) return setMq(null);
+    const c = e.view.coordsAtPos(from);
+    setMq((cur) => (cur && cur.from === from && cur.query === m[1] ? cur : { query: m[1]!, from, to: sel.from, left: c.left, top: c.top }));
+    cb.current.onMentionStart?.();
+  };
 
   const editor = useEditor({
     extensions: [
@@ -58,6 +139,27 @@ export const ChatEditor = forwardRef<ChatEditorHandle, Props>(function ChatEdito
         },
       }),
       Placeholder.configure({ placeholder: () => cb.current.placeholder }),
+      Smileys,
+      // Tasten der Vorschlagsliste vor allen anderen (Enter sendet sonst)
+      Extension.create({
+        name: 'chatMentionKeys',
+        priority: 1100,
+        addKeyboardShortcuts() {
+          const m = () => mention.current;
+          const take = (fn: () => void) => () => {
+            if (!m().items.length) return false;
+            fn();
+            return true;
+          };
+          return {
+            ArrowDown: take(() => m().move(1)),
+            ArrowUp: take(() => m().move(-1)),
+            Enter: take(() => m().pick()),
+            Tab: take(() => m().pick()),
+            Escape: take(() => m().close()),
+          };
+        },
+      }),
       Extension.create({
         name: 'chatKeys',
         priority: 1000,
@@ -104,8 +206,48 @@ export const ChatEditor = forwardRef<ChatEditorHandle, Props>(function ChatEdito
     },
     onUpdate({ editor: e }) {
       cb.current.onChange(e.isEmpty ? '' : editorToMarkdown(e.getJSON()));
+      detectMention(e);
+    },
+    onSelectionUpdate({ editor: e }) {
+      detectMention(e);
+    },
+    onBlur() {
+      setMq(null);
     },
   });
+
+  const items = useMemo(() => {
+    if (!mq || !p.mentions?.length) return [];
+    const q = mq.query.toLowerCase();
+    return p.mentions
+      .map((it) => [it, rankMention(it, q)] as const)
+      .filter(([, r]) => r >= 0)
+      .sort((a, b) => a[1] - b[1])
+      .slice(0, MAX_MENTIONS)
+      .map(([it]) => it);
+  }, [mq, p.mentions]);
+
+  useEffect(() => setMIndex(0), [mq?.from, mq?.query]);
+
+  const pickMention = (it: MentionItem | undefined) => {
+    if (!editor || !mq || !it) return;
+    editor
+      .chain()
+      .focus()
+      .insertContentAt({ from: mq.from, to: mq.to }, { type: 'text', text: `@${it.handle} ` })
+      .run();
+    setMq(null);
+  };
+  const mention = useRef({ items, move: (_d: number) => {}, pick: () => {}, close: () => {} });
+  mention.current = {
+    items,
+    move: (d) => setMIndex((i) => (i + d + items.length) % items.length),
+    pick: () => pickMention(items[Math.min(mIndex, items.length - 1)]),
+    close: () => {
+      dismissed.current = mq?.from ?? null;
+      setMq(null);
+    },
+  };
 
   useEffect(() => {
     cb.current.onReady?.(editor);
@@ -132,7 +274,45 @@ export const ChatEditor = forwardRef<ChatEditorHandle, Props>(function ChatEdito
     [editor],
   );
 
-  return <EditorContent editor={editor} className="chat-editor max-h-[220px] min-h-[36px] flex-1 overflow-y-auto px-1.5 py-[7px] text-[14px] leading-[1.45]" />;
+  return (
+    <>
+      <EditorContent editor={editor} className="chat-editor max-h-[220px] min-h-[36px] flex-1 overflow-y-auto px-1.5 py-[7px] text-[14px] leading-[1.45]" />
+      {mq &&
+        items.length > 0 &&
+        createPortal(
+          <div
+            role="listbox"
+            aria-label="Erwähnen"
+            className="fixed z-[60] w-72 animate-scale-in overflow-hidden rounded-xl border border-border bg-surface p-1 shadow-pop origin-bottom-left"
+            style={{ left: Math.max(8, Math.min(mq.left - 8, window.innerWidth - 296)), bottom: window.innerHeight - mq.top + 6 }}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {items.map((it, i) => (
+              <button
+                key={it.handle}
+                type="button"
+                role="option"
+                aria-selected={i === mIndex}
+                onMouseEnter={() => setMIndex(i)}
+                onClick={() => pickMention(it)}
+                className={cn('flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm', i === mIndex ? 'bg-hover' : '')}
+              >
+                {it.user ? (
+                  <UserAvatar user={it.user} size={24} />
+                ) : (
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
+                    <AtSign className="h-3.5 w-3.5" />
+                  </span>
+                )}
+                <span className="min-w-0 flex-1 truncate font-medium">{it.label}</span>
+                {it.detail && <span className="max-w-[45%] shrink-0 truncate text-xs text-muted">{it.detail}</span>}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
 });
 
 /* ───────────────────────────── Formatleiste ───────────────────────────── */

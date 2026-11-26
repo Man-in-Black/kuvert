@@ -46,7 +46,12 @@ function persistentSecret(envName: string, file: string, gen: () => string): str
 
 export interface ServiceConfig {
   microsoft: { clientId: string; clientSecret: string; tenant: string };
-  google: { clientId: string; clientSecret: string };
+  google: {
+    clientId: string;
+    clientSecret: string;
+    /** API-Schlüssel für die Ortssuche (Places API New) im Termin-Dialog */
+    placesApiKey: string;
+  };
   ai: { enabled: boolean; backend: 'ollama' | 'openai'; baseUrl: string; apiKey: string; model: string; temperature: number };
   search: {
     enabled: boolean;
@@ -75,6 +80,7 @@ const envDefaults: ServiceConfig = {
   google: {
     clientId: env('GOOGLE_CLIENT_ID'),
     clientSecret: env('GOOGLE_CLIENT_SECRET'),
+    placesApiKey: env('GOOGLE_PLACES_API_KEY'),
   },
   ai: {
     enabled: env('AI_ENABLED', env('OLLAMA_ENABLED', 'true')) !== 'false',

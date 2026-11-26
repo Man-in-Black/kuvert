@@ -10,6 +10,7 @@
  */
 import type { FastifyBaseLogger } from 'fastify';
 import {
+  cardsText,
   emojiForShortcode,
   shortcodeForEmoji,
   type ChatBridgeType,
@@ -297,7 +298,7 @@ export abstract class BridgeBase {
 
 /** Kurztext einer Nachricht für Push-Benachrichtigungen */
 export function previewText(m: ChatMessage): string {
-  const text = m.body
+  const text = (m.body.trim() || cardsText(m.cards))
     .replace(/```[\s\S]*?```/g, '[Code]')
     .replace(/[*_`~]/g, '')
     .replace(/\s+/g, ' ')

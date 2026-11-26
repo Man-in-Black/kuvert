@@ -32,9 +32,9 @@ Läuft als ein Docker-Container.
 | **Profil & Sicherheit** | Profilbild und Stammdaten, Passwort, **2FA per TOTP** (Authenticator-App) mit Wiederherstellungscodes, aktive Sitzungen/Geräte verwalten, Datenexport |
 | **API** | REST-API für alle Funktionen, persönliche **API-Tokens** mit Scopes (read/write/admin), interaktive Doku (OpenAPI/Swagger) unter `/api/docs`, **Webhooks** mit HMAC-Signatur (z. B. für n8n, Node-RED) |
 | **mailcow** | Admin: Postfächer, Domains, Aliasse, Quarantäne, Provisionierung (Postfach + Kuvert-Konto in einem Schritt). Benutzer: Kontingent, Wegwerf-Adressen, App-Passwörter, Quarantäne, Passwort ändern. Kontotyp „mailcow“ richtet IMAP/SMTP + SOGo-Kalender/Kontakte automatisch ein |
-| **Team-Chat** | Direktnachrichten und Gruppen zwischen Kuvert-Benutzern in Echtzeit (SSE): WYSIWYG-Eingabe mit Markdown-Kürzeln, Dateien & Bilder, Antworten, Reaktionen, Bearbeiten/Löschen, Lesebestätigungen, „schreibt …“, Online-Status, Suche, Stummschalten/Anheften, Web Push, Webhook `chat.message`; zusätzlich **Mattermost, Nextcloud Talk und Microsoft Teams** in derselben Oberfläche |
+| **Team-Chat** | Direktnachrichten und Gruppen zwischen Kuvert-Benutzern in Echtzeit (SSE): WYSIWYG-Eingabe mit Markdown-Kürzeln, @-Erwähnungen (Personen, @all), Dateien & Bilder, Antworten, Reaktionen, Bearbeiten/Löschen, Lesebestätigungen, „schreibt …“, Online-Status, Suche, Stummschalten/Anheften, Web Push, Webhook `chat.message`; zusätzlich **Mattermost, Nextcloud Talk und Microsoft Teams** in derselben Oberfläche |
 | **Mail-Archiver** | Archiv durchsuchen (Volltext, Zeitraum, Konto, Ordner), Mails lesen, Anhänge/.eml laden, aus dem Archiv weiterleiten oder antworten – per persönlichem API-Schlüssel |
-| **Oberfläche** | Modernes, responsives Design (Desktop, Tablet, Smartphone mit eigener Mobil-Navigation), Hell/Dunkel/System, Befehlspalette (Strg/⌘+K), einklappbare Seitenleiste, installierbar als PWA |
+| **Oberfläche** | Modernes, responsives Design (Desktop, Tablet, Smartphone mit eigener Mobil-Navigation), Hell/Dunkel/System, Befehlspalette (Strg/⌘+K), einklappbare Seitenleiste, installierbar als PWA oder als [Desktop-App](#desktop-app) |
 | **Suche** | Lokaler Volltext-Index (Meilisearch) über alle Konten: Treffer in wenigen Millisekunden, Suche beim Tippen, tippfehlertolerant, Hervorhebung, Suchbefehle (`from:`, `to:`, `has:attachment`, `is:unread`, `in:sent`, `after:`/`before:` …), Mail-Treffer direkt in der Befehlspalette |
 | **Komfort** | Senden rückgängig machen, später senden, Entwürfe automatisch speichern, Tastaturkürzel, Dunkelmodus, PWA, Tracking-Schutz (externe Inhalte blockiert), Vorlagen/Textbausteine, Mehrbenutzer, mailto:-Links öffnen den Kuvert-Editor (auch als Standard-Mailprogramm im Browser festlegbar) |
 
@@ -298,6 +298,10 @@ Nachrichten werden als Markdown gespeichert; die Eingabe ist ein WYSIWYG-Editor,
 `_kursiv_`, `` `Code` ``, `> Zitat`, `- Liste` oder ```` ``` ```` beim Tippen umsetzt (alternativ über die Formatleiste).
 Dateien und Bilder lassen sich anhängen, einfügen oder ablegen; sie liegen unter `/data/chat-files` und sind nur für
 Mitglieder der Unterhaltung abrufbar. Gruppen-Admins können Mitglieder verwalten und Nachrichten moderieren.
+**Erwähnungen:** Ein `@` im Eingabefeld schlägt die Mitglieder der Unterhaltung vor (im Kuvert-Chat mit dem
+E-Mail-Namen, z. B. `@max.mustermann`), in Gruppen zusätzlich `@all` (Mattermost auch `@channel`/`@here`;
+Teams-Chats nur einzelne Personen). Erwähnungen werden im Verlauf hervorgehoben und melden sich auch in
+stummgeschalteten Unterhaltungen.
 Benachrichtigungen (Hinweis, Desktop, Ton, Web Push) stellt jeder unter *Einstellungen → Chat* ein; eine
 Desktop-Benachrichtigung kommt auch, wenn Kuvert zwar sichtbar, aber nicht das aktive Fenster ist. Ungelesene
 Nachrichten zählt ein Badge an **Chat**, ungelesene Mails im Sammel-Posteingang eines an **Mail**.
@@ -338,6 +342,15 @@ damit nach Sekunden durchsuchbar –, danach werden Nachrichtentexte und Anhangn
   Push-Dienste der Browser (Chrome: `fcm.googleapis.com`, Firefox: `*.push.services.mozilla.com`).
   VAPID-Schlüssel werden automatisch erzeugt.
 - IMAP-Konten nutzen IDLE (sofort), andere Konten werden im Intervall `POLL_INTERVAL` abgefragt.
+
+## Desktop-App
+
+[Kuvert Desktop](https://github.com/Man-in-Black/kuvert-desktop) ist eine schlanke Hülle (Electron) um die
+Kuvert-Oberfläche für Linux, Windows und macOS: eigenes Fenster, Symbol im Infobereich mit Hinweis auf neue
+Nachrichten, Autostart und mailto:-Links aus dem System. Links auf andere Seiten öffnen im Standardbrowser des
+Systems – Chromium-Browser nehmen dafür das zuletzt aktive Profil, anders als eine installierte PWA, die immer
+ihr eigenes Profil verwendet. Die App lädt die Oberfläche vom Server; neue Kuvert-Funktionen brauchen also kein
+App-Update. Web Push entfällt dort, Benachrichtigungen kommen, solange die App läuft.
 
 ---
 
@@ -417,6 +430,7 @@ Alle Variablen mit Erklärung: [`.env.example`](.env.example). Die wichtigsten:
 | `APP_SECRET` | Schlüssel für Sitzungen & Verschlüsselung (sonst automatisch erzeugt) |
 | `MS_CLIENT_ID` / `MS_CLIENT_SECRET` / `MS_TENANT` | Microsoft 365 (Vorgabe, auch im Admin-Bereich einstellbar) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google (Vorgabe, auch im Admin-Bereich einstellbar) |
+| `GOOGLE_PLACES_API_KEY` | Optional: Ortssuche im Termin-Dialog über die Google Places API (New), auch im Admin-Bereich einstellbar |
 | `AI_BACKEND` / `AI_BASE_URL` / `AI_MODEL` | KI-Assistent (Vorgabe, auch im Admin-Bereich einstellbar) |
 | `AI_TRIAGE_CONCURRENCY` / `AI_TRIAGE_RETENTION_DAYS` | KI-Triage: gleichzeitige Einordnungen (Standard 1), Aufbewahrung in Tagen (Standard 180) |
 | `KUVERT_MODULES` / `KUVERT_DISABLED_MODULES` | Module ein-/ausschalten |

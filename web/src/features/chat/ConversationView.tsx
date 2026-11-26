@@ -484,6 +484,8 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
         onEditLast={editLast}
         onSent={() => scrollToBottom()}
         caps={caps}
+        kind={c.kind}
+        source={c.source?.type}
       />
 
       {dragging && (

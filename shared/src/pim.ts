@@ -77,6 +77,24 @@ export interface EventInput {
 
 export type EventResponse = 'accept' | 'tentative' | 'decline';
 
+/** Vorschlag der Ortssuche (Google Places) im Termin-Dialog */
+export interface PlaceSuggestion {
+  placeId: string;
+  /** Name des Orts bzw. erste Adresszeile, z. B. „il Mio“ */
+  main: string;
+  /** Rest, z. B. „Marienstraße 1, Neu-Ulm, Deutschland“ */
+  secondary?: string;
+  /** Unternehmen/Sehenswürdigkeit statt reiner Adresse */
+  poi: boolean;
+}
+
+/** Aufgelöster Ort: fertiger Text für das Feld „Ort“ */
+export interface PlaceDetails {
+  placeId: string;
+  location: string;
+  address?: string;
+}
+
 export interface OnlineMeeting {
   joinUrl: string;
   subject?: string;

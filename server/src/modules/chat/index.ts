@@ -10,7 +10,7 @@
  * Abschalten: KUVERT_DISABLED_MODULES=chat · nur die Anbindungen: CHAT_BRIDGES=false
  */
 import { z } from 'zod';
-import { DEFAULT_CHAT_SETTINGS, type ChatConversation, type ChatMessage, type ChatSettings, type ChatUser, type ServerEvent } from '@kuvert/shared';
+import { DEFAULT_CHAT_SETTINGS, mentionHandle, mentionsHandle, type ChatConversation, type ChatMessage, type ChatSettings, type ChatUser, type ServerEvent } from '@kuvert/shared';
 import { audit } from '../../core/audit.js';
 import { AppError, BadRequestError, NotFoundError } from '../../core/errors.js';
 import { defineModule, type ModuleContext } from '../../core/module.js';
@@ -92,7 +92,9 @@ async function pushNewMessage(message: ChatMessage) {
   for (const userId of chatStore.memberIds(message.conversationId)) {
     if (userId === message.senderId) continue;
     const member = chatStore.member(message.conversationId, userId);
-    if (!member || member.muted || !chatSettings(userId).notify) continue;
+    if (!member || !chatSettings(userId).notify) continue;
+    // Stummgeschaltet: nur bei Erwähnung (@name, @all …)
+    if (member.muted && !mentionsHandle(message.body, mentionHandle(users.get(userId)?.email))) continue;
     if (!pushStore.hasSubscriptions(userId)) continue;
     try {
       await pushStore.send(userId, {
@@ -111,7 +113,9 @@ async function pushNewMessage(message: ChatMessage) {
 async function pushExternal(userId: string, message: ChatMessage, info: { kind: 'direct' | 'group'; title: string; sender: string }) {
   const ctx = ctxRef!;
   if (!ctx.registry.modules.some((m) => m.id === 'notifications')) return;
-  if (!chatSettings(userId).notify || extPrefs.get(userId, message.conversationId).muted) return;
+  if (!chatSettings(userId).notify) return;
+  // Stummgeschaltet: nur bei Erwähnung
+  if (extPrefs.get(userId, message.conversationId).muted && !message.mention) return;
   // Wie in Mattermost/Talk selbst: in Gruppen und Kanälen nur bei Erwähnung
   if (info.kind === 'group' && !message.mention) return;
   if (!pushStore.hasSubscriptions(userId)) return;

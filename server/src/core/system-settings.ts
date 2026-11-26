@@ -30,6 +30,7 @@ export const SERVICE_FIELDS: { [K in ServiceKey]: Record<keyof ServiceConfig[K],
   google: {
     clientId: { type: 'string', env: ['GOOGLE_CLIENT_ID'] },
     clientSecret: { type: 'secret', env: ['GOOGLE_CLIENT_SECRET'] },
+    placesApiKey: { type: 'secret', env: ['GOOGLE_PLACES_API_KEY'] },
   },
   ai: {
     enabled: { type: 'boolean', env: ['AI_ENABLED', 'OLLAMA_ENABLED'] },

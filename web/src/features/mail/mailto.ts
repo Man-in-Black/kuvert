@@ -9,6 +9,7 @@
  * bereits offenen Fenster statt in einem neuen.
  */
 import type { EmailAddress } from '@kuvert/shared';
+import { desktop } from '@/lib/desktop';
 import { parseAddressList, textToHtml } from '@/lib/utils';
 import type { ComposeInit } from './compose-api';
 
@@ -113,6 +114,11 @@ interface LaunchQueue {
  * schon über captureMailtoLaunch() behandelt und hier übersprungen.
  */
 export function onMailtoLaunch(fn: (init: ComposeInit) => void) {
+  // Desktop-App: mailto:-Links aus dem System und „Neue E-Mail" im Infobereich
+  desktop?.onMailto((raw) => {
+    const init = parseMailto(raw);
+    if (init) fn(init);
+  });
   (window as unknown as { launchQueue?: LaunchQueue }).launchQueue?.setConsumer((p) => {
     if (!p.targetURL) return;
     let raw: string | null = null;
@@ -134,6 +140,7 @@ export function onMailtoLaunch(fn: (init: ComposeInit) => void) {
 /* ───────────── Anmeldung im Browser ───────────── */
 
 export function canRegisterMailtoHandler(): boolean {
+  if (desktop) return false;
   return typeof navigator !== 'undefined' && 'registerProtocolHandler' in navigator && window.isSecureContext;
 }
 

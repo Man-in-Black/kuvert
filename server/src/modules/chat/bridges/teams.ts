@@ -9,6 +9,7 @@
  * Browser (sonst jede Minute), gerade geöffnete Unterhaltungen alle paar Sekunden.
  */
 import type { ChatAttachment, ChatCapabilities, ChatConversation, ChatMember, ChatMessage, ChatMessagePage, ChatReaction, ChatUser } from '@kuvert/shared';
+import { mentionHandle } from '@kuvert/shared';
 import { AppError, AuthError, BadRequestError, HttpError, NotFoundError } from '../../../core/errors.js';
 import type { AccountService } from '../../../core/accounts.js';
 import { GraphClient, enc, qs } from '../../microsoft/graph.js';
@@ -27,6 +28,13 @@ interface GMember {
   userId?: string | null;
   email?: string | null;
   roles?: string[];
+}
+
+/** Erwähnung beim Senden (Graph chatMessageMention) */
+interface GMentionOut {
+  id: number;
+  mentionText: string;
+  mentioned: { user: { id: string; displayName: string; userIdentityType: 'aadUser' } };
 }
 
 interface GPreview {
@@ -616,6 +624,7 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
         email: m.email ?? '',
         avatarUrl: this.avatarUrl(m.userId!),
         online: false,
+        mention: mentionHandle(m.email),
       }));
   }
 
@@ -680,7 +689,8 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
   async send(chatId: string, input: { body: string; replyTo?: string | null; files: BinaryFile[] }): Promise<ChatMessage> {
     if (input.files.length) throw new BadRequestError('Dateien können in Teams-Chats aus Kuvert noch nicht gesendet werden');
     this.markHot(chatId);
-    const html = markdownToTeamsHtml(input.body);
+    const { html, mentions } = await this.withMentions(chatId, markdownToTeamsHtml(input.body));
+    const extra = mentions.length ? { mentions } : {};
     let sent: GMessage;
     const ref = input.replyTo ? await this.getMessage(chatId, input.replyTo).then((m) => this.reply(m)).catch(() => null) : null;
     try {
@@ -688,13 +698,15 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
         g.json<GMessage>(`/chats/${enc(chatId)}/messages`, {
           method: 'POST',
           retries: 1,
-          body: { body: { contentType: 'html', content: `${ref?.tag ?? ''}${html}` }, ...(ref ? { attachments: [ref.attachment] } : {}) },
+          body: { body: { contentType: 'html', content: `${ref?.tag ?? ''}${html}` }, ...extra, ...(ref ? { attachments: [ref.attachment] } : {}) },
         }),
       );
     } catch (err) {
       if (!ref || !(err instanceof AppError) || err.status !== 400) throw err;
       // Zitat abgelehnt → ohne Bezug senden
-      sent = await this.call((g) => g.json<GMessage>(`/chats/${enc(chatId)}/messages`, { method: 'POST', retries: 1, body: { body: { contentType: 'html', content: html } } }));
+      sent = await this.call((g) =>
+        g.json<GMessage>(`/chats/${enc(chatId)}/messages`, { method: 'POST', retries: 1, body: { body: { contentType: 'html', content: html }, ...extra } }),
+      );
     }
     const st = this.state.get(chatId);
     if (st) {
@@ -704,6 +716,35 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
     const msg = this.toMessage(sent, chatId);
     if (!msg) throw new AppError(502, 'teams_send', 'Unerwartete Antwort von Microsoft Teams');
     return msg;
+  }
+
+  /** @kürzel (E-Mail-Name) von Chat-Mitgliedern in echte Teams-Erwähnungen umwandeln – nicht in Code und Tags */
+  private async withMentions(chatId: string, html: string): Promise<{ html: string; mentions: GMentionOut[] }> {
+    if (!html.includes('@')) return { html, mentions: [] };
+    const list = await this.call((g) => g.all<GMember>(`/chats/${enc(chatId)}/members`, undefined, 500)).catch(() => [] as GMember[]);
+    const byHandle = new Map<string, GMember>();
+    for (const m of list) {
+      const h = mentionHandle(m.email);
+      if (h && m.userId && !byHandle.has(h)) byHandle.set(h, m);
+    }
+    if (!byHandle.size) return { html, mentions: [] };
+    const mentions: GMentionOut[] = [];
+    const out = html
+      .split(/(<pre>[\s\S]*?<\/pre>|<code>[\s\S]*?<\/code>|<[^>]+>)/)
+      .map((part, i) =>
+        i % 2
+          ? part
+          : part.replace(/(^|[^\w@./])@([\w+-]+(?:\.[\w+-]+)*)/g, (all, pre: string, handle: string) => {
+              const m = byHandle.get(handle.toLowerCase());
+              if (!m) return all;
+              const name = m.displayName || m.email || handle;
+              const id = mentions.length;
+              mentions.push({ id, mentionText: name, mentioned: { user: { id: m.userId!, displayName: name, userIdentityType: 'aadUser' } } });
+              return `${pre}<at id="${id}">${escapeHtml(name)}</at>`;
+            }),
+      )
+      .join('');
+    return { html: out, mentions };
   }
 
   async edit(chatId: string, messageId: string, body: string): Promise<ChatMessage> {

@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { BellRing, Send } from 'lucide-react';
 import type { UserSettings } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
+import { desktop } from '@/lib/desktop';
 import { useAppInfo, useFeature, useSettings, useUpdateSettings } from '@/lib/queries';
 import { Badge, Button, Switch } from '@/components/ui';
 import { Card, HelpBox, SavedIndicator, SectionHeader, SettingRow } from '@/features/settings/ui';
@@ -117,7 +118,8 @@ export function NotificationsSection() {
         <p className="pt-3 text-xs text-muted">Pro Konto lassen sich Mail-Benachrichtigungen unter „Konten → Bearbeiten" abschalten.</p>
       </Card>
 
-      {pushFeature && (
+      {/* Desktop-App: kein Web Push – sie läuft im Infobereich weiter und benachrichtigt direkt */}
+      {pushFeature && !desktop && (
         <Card title="Push auf diesem Gerät" description="Benachrichtigungen auch dann, wenn kein Kuvert-Tab geöffnet ist (z. B. als installierte App).">
           {!pushSupported() ? (
             <HelpBox tone="warning">

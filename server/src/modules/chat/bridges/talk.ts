@@ -368,6 +368,8 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
         email: '',
         avatarUrl: p.actorType === 'users' ? this.avatarUrl(p.actorId) : null,
         online: p.status === 'online',
+        // Talk: @id, bei Sonderzeichen @"id"
+        mention: p.actorType === 'users' ? (/^[\w.-]+$/.test(p.actorId) ? p.actorId : `"${p.actorId}"`) : undefined,
       }));
   }
 

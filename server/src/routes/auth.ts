@@ -50,7 +50,7 @@ export async function authRoutes(app: FastifyInstance, ctx: ModuleContext) {
       user,
       modules: ctx.registry.listModules(),
       accountTypes: user ? ctx.registry.listAccountTypes().filter((t) => policies.accountTypeAllowed(t.type)) : [],
-      features: ctx.registry.features(),
+      features: { ...ctx.registry.features(), ...(user && config.google.placesApiKey ? { places: true } : {}) },
       vapidPublicKey: (ctx.kv.get<string>('push', 'vapidPublicKey') ?? config.vapid.publicKey) || null,
       publicUrl: config.publicUrl,
       policies: { require2fa: p.require2fa, usersCanCreateApiTokens: p.usersCanCreateApiTokens },

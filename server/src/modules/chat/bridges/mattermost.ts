@@ -4,10 +4,12 @@
  * wird bei Ablauf automatisch erneuert). Echtzeit über den WebSocket des Servers.
  */
 import {
+  cardsText,
   replaceShortcodes,
   type ChatCall,
   type ChatCallInfo,
   type ChatCapabilities,
+  type ChatCard,
   type ChatCategory,
   type ChatConversation,
   type ChatMember,
@@ -155,6 +157,28 @@ const CALLS_EVENT = 'custom_com.mattermost.calls_';
 const CAPS: ChatCapabilities = { edit: true, delete: true, react: true, reply: true, files: true, typing: true, readReceipts: false, manage: false };
 const POST_CACHE = 3000;
 const PREVIEW_CHANNELS = 40;
+/** Entfernte "Benutzer-ID" für Webhook-Absender (kein echtes Mattermost-Konto) */
+const WEBHOOK_PREFIX = 'webhook:';
+
+const isTrue = (v: unknown) => v === true || v === 'true';
+
+/** Mattermost-Markdown der Anhänge → Chat-Markdown (Emoji-Kürzel, Überschriften als Fettschrift) */
+function mmText(s: string): string {
+  return replaceShortcodes(s)
+    .replace(/\r\n?/g, '\n')
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/gm, '**$1**');
+}
+
+/** Farbe eines Anhangs: good/warning/danger oder Hex-Wert */
+function mmColor(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const s = v.trim().toLowerCase();
+  if (s === 'good') return '#3db887';
+  if (s === 'warning') return '#ffbc1f';
+  if (s === 'danger') return '#d24b4e';
+  if (/^#?[0-9a-f]{6}$|^#?[0-9a-f]{3}$/.test(s)) return s.startsWith('#') ? s : `#${s}`;
+  return null;
+}
 
 export function normalizeMattermostUrl(v: string): string {
   let s = v.trim();
@@ -448,6 +472,7 @@ export class MattermostBridge extends BridgeBase implements ChatBridge {
       online: this.statuses.get(u.id) === 'online',
       jobTitle: u.position || undefined,
       disabled: (u.delete_at ?? 0) > 0 || undefined,
+      mention: u.username || undefined,
     };
   }
 
@@ -483,6 +508,44 @@ export class MattermostBridge extends BridgeBase implements ChatBridge {
     };
   }
 
+  /** Nachrichtenanhänge (props.attachments) von Bots und Webhooks → Karten */
+  private cards(p: MmPost): ChatCard[] {
+    const list = p.props?.attachments;
+    if (!Array.isArray(list)) return [];
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : typeof v === 'number' ? String(v) : null);
+    const url = (v: unknown) => {
+      const s = str(v);
+      return s && /^https?:\/\//i.test(s) ? s : null;
+    };
+    const cards: ChatCard[] = [];
+    for (const raw of list) {
+      if (!raw || typeof raw !== 'object') continue;
+      const a = raw as Record<string, unknown>;
+      const fields = (Array.isArray(a.fields) ? a.fields : [])
+        .map((f) => (f && typeof f === 'object' ? (f as Record<string, unknown>) : null))
+        .filter((f): f is Record<string, unknown> => !!f && (!!str(f.title) || !!str(f.value)))
+        .map((f) => ({ title: mmText(str(f.title) ?? ''), value: mmText(str(f.value) ?? ''), short: f.short === true }));
+      const ts = typeof a.ts === 'number' || (typeof a.ts === 'string' && /^\d+(\.\d+)?$/.test(a.ts)) ? Number(a.ts) : 0;
+      const card: ChatCard = {
+        color: mmColor(a.color),
+        pretext: str(a.pretext) && mmText(str(a.pretext)!),
+        author: str(a.author_name),
+        authorUrl: url(a.author_link),
+        title: str(a.title) && mmText(str(a.title)!),
+        titleUrl: url(a.title_link),
+        text: str(a.text) && mmText(str(a.text)!),
+        fields,
+        imageUrl: url(a.image_url),
+        footer: str(a.footer) && mmText(str(a.footer)!),
+        ts: ts > 0 ? msToIso(ts < 1e11 ? ts * 1000 : ts) : null,
+      };
+      // Nur "fallback" (Kurztext für Benachrichtigungen) → als Text anzeigen
+      if (!card.pretext && !card.title && !card.text && !fields.length && !card.imageUrl && !card.author) card.text = str(a.fallback) && mmText(str(a.fallback)!);
+      if (card.pretext || card.title || card.text || fields.length || card.imageUrl || card.author || card.footer) cards.push(card);
+    }
+    return cards;
+  }
+
   toMessage(p: MmPost): ChatMessage {
     const system = p.type.startsWith('system_');
     const deleted = p.delete_at > 0;
@@ -502,20 +565,24 @@ export class MattermostBridge extends BridgeBase implements ChatBridge {
         ? {
             id: this.msgId(root.channel_id, root.id),
             senderId: this.uid(root.user_id),
-            body: root.delete_at ? '' : root.type === 'custom_calls' ? '📞 Anruf' : replaceShortcodes(root.message).slice(0, 280),
+            body: root.delete_at ? '' : root.type === 'custom_calls' ? '📞 Anruf' : (replaceShortcodes(root.message).trim() || cardsText(this.cards(root))).slice(0, 280),
             deleted: root.delete_at > 0,
             hasAttachments: !!root.file_ids?.length,
           }
         : { id: this.msgId(p.channel_id, p.root_id), senderId: null, body: '', deleted: false, hasAttachments: false };
     }
-    const override = typeof p.props?.override_username === 'string' ? p.props.override_username : null;
+    const override = typeof p.props?.override_username === 'string' && p.props.override_username.trim() ? p.props.override_username.trim() : null;
+    const webhook = isTrue(p.props?.from_webhook);
+    const bot = webhook || isTrue(p.props?.from_bot) || !!this.users.get(p.user_id)?.is_bot;
+    const cards = deleted || system || call ? [] : this.cards(p);
     const username = this.conn.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const mention = !system && !call && new RegExp(`@(${username}|all|channel|here)(?![\\w.-])`, 'i').test(p.message);
     return {
       id: this.msgId(p.channel_id, p.id),
       seq: p.create_at,
       conversationId: this.convId(p.channel_id),
-      senderId: system ? null : this.uid(p.user_id),
+      // Webhooks laufen über das Konto ihres Erstellers (oft das eigene) – eigener Absender je Anzeigename
+      senderId: system ? null : webhook ? extId(this.conn.id, `${WEBHOOK_PREFIX}${override ?? p.user_id}`) : this.uid(p.user_id),
       kind: system ? 'system' : 'text',
       body: system
         ? JSON.stringify({ action: 'text', actorId: this.uid(p.user_id) ?? '', text: replaceShortcodes(p.message) })
@@ -537,6 +604,8 @@ export class MattermostBridge extends BridgeBase implements ChatBridge {
       senderName: override ?? (this.users.has(p.user_id) ? mmDisplayName(this.users.get(p.user_id)) : null),
       mention: mention || undefined,
       call: call ?? undefined,
+      cards: cards.length ? cards : undefined,
+      bot: bot || undefined,
     };
   }
 
@@ -835,6 +904,7 @@ export class MattermostBridge extends BridgeBase implements ChatBridge {
   }
 
   async avatar(remoteUserId: string): Promise<BinaryFile> {
+    if (remoteUserId.startsWith(WEBHOOK_PREFIX)) throw new NotFoundError('Avatar');
     const res = await this.request(`/users/${encodeURIComponent(remoteUserId)}/image`, { retries: 0 });
     return { filename: 'avatar', contentType: res.headers.get('content-type') || 'image/png', data: Buffer.from(await res.arrayBuffer()) };
   }

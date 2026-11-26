@@ -184,7 +184,7 @@ export interface ServiceFieldState {
 
 export interface ServiceSettingsView {
   microsoft: Record<'clientId' | 'clientSecret' | 'tenant', ServiceFieldState>;
-  google: Record<'clientId' | 'clientSecret', ServiceFieldState>;
+  google: Record<'clientId' | 'clientSecret' | 'placesApiKey', ServiceFieldState>;
   ai: Record<'enabled' | 'backend' | 'baseUrl' | 'model' | 'apiKey' | 'temperature', ServiceFieldState>;
   search: Record<'enabled' | 'url' | 'apiKey' | 'indexBodies' | 'maxAgeDays' | 'includeTrash' | 'syncIntervalMin', ServiceFieldState>;
   publicUrl: string;

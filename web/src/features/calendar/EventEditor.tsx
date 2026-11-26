@@ -8,6 +8,7 @@ import { AddressInput } from '@/components/AddressInput';
 import { Button, Checkbox, Field, Input, Modal, Select, Textarea } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { calKey, calKeyOf, createEvent, invalidateEvents, updateEvent } from './api';
+import { LocationInput } from './LocationInput';
 import { PRESET_LABELS, buildRRule, parseRRule, type RecurrencePreset, type RecurrenceState } from './rrule';
 import { REMINDER_OPTIONS, SHOW_AS_LABELS, eventDescription, meetingLabel, parseEventDate, toDateInput, toTimeInput } from './utils';
 
@@ -290,7 +291,7 @@ export function EventEditor({
         )}
 
         <Field label="Ort">
-          <Input value={s.location} onChange={(e) => set('location', e.target.value)} placeholder="Raum, Adresse oder Link" />
+          <LocationInput value={s.location} onChange={(v) => set('location', v)} />
         </Field>
 
         <Field label="Teilnehmer">

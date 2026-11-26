@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ChatAttachment, ChatConversation, ChatMember, ChatMessage, ChatReaction, ChatSystemEvent, ChatUser } from '@kuvert/shared';
+import { mentionHandle } from '@kuvert/shared';
 import { config } from '../../config.js';
 import { uuid } from '../../core/crypto.js';
 import { getDb } from '../../core/db.js';
@@ -221,6 +222,7 @@ export const chatStore = {
         jobTitle: profile.jobTitle || undefined,
         department: profile.department || undefined,
         disabled: !!r.disabled || undefined,
+        mention: mentionHandle(u.email),
       };
     });
   },

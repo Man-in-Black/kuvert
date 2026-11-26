@@ -188,3 +188,25 @@ export function replaceShortcodes(text: string): string {
     .map((part, i) => (i % 2 ? part : part.replace(/(?<![\w]):([a-z0-9_+-]{1,50}):/gi, (all, name: string) => emojiForShortcode(name) ?? all)))
     .join('');
 }
+
+/** Text-Smileys, die beim Tippen im Chat durch Emojis ersetzt werden */
+const SMILEY_TABLE: [string, string[]][] = [
+  ['🙂', [':)', ':-)', '=)']],
+  ['😉', [';)', ';-)']],
+  ['😄', [':D', ':-D', '=D']],
+  ['😆', ['xD', 'XD']],
+  ['🙁', [':(', ':-(']],
+  ['😢', [":'(", ":'-("]],
+  ['😛', [':P', ':-P', ':p', ':-p']],
+  ['😜', [';P', ';-P', ';p', ';-p']],
+  ['😮', [':O', ':-O', ':o', ':-o']],
+  ['😕', [':/', ':-/']],
+  ['😐', [':|', ':-|']],
+  ['😎', ['B-)', '8-)']],
+  ['😘', [':*', ':-*']],
+  ['😇', ['O:)', 'O:-)']],
+  ['❤️', ['<3']],
+  ['💔', ['</3']],
+];
+
+export const TEXT_SMILEYS = new Map<string, string>(SMILEY_TABLE.flatMap(([emoji, codes]) => codes.map((c) => [c, emoji] as [string, string])));
