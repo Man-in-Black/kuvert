@@ -7,6 +7,7 @@ import { format, isSameDay, isToday, isYesterday } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { cardsText, type ChatMessage, type ChatSystemEvent, type ChatUser } from '@kuvert/shared';
 import { userName } from './api';
+import { CodeBlock } from './CodeBlock';
 import { parseMarkdown, type Inline, type Line } from './markdown';
 
 /** @name, @all … hervorheben (nicht in E-Mail-Adressen) */
@@ -71,11 +72,7 @@ export function renderBody(body: string): ReactNode {
         // inline, damit die Uhrzeit (float) in die letzte Textzeile passt
         return <Fragment key={key}>{renderLines(b.lines, key)}</Fragment>;
       case 'code':
-        return (
-          <pre key={key} className="my-1 overflow-x-auto whitespace-pre rounded-lg bg-black/10 px-3 py-2 font-mono text-[12.5px] leading-relaxed dark:bg-white/10">
-            {b.v}
-          </pre>
-        );
+        return <CodeBlock key={key} code={b.v} lang={b.lang} />;
       case 'quote':
         return (
           <span key={key} className="my-0.5 block border-l-2 border-current/40 pl-2 opacity-80">

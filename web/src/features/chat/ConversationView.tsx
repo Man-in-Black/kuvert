@@ -34,6 +34,17 @@ import { MessageItem } from './MessageItem';
 
 const GROUP_GAP_MS = 5 * 60_000;
 
+/** Nachrichten nach Kalendertag gruppieren (Index im Gesamtverlauf bleibt erhalten) */
+function dayGroups<T extends { createdAt: string }>(messages: T[]): { m: T; i: number }[][] {
+  const days: { m: T; i: number }[][] = [];
+  messages.forEach((m, i) => {
+    const last = days[days.length - 1];
+    if (last && sameDay(last[0]!.m.createdAt, m.createdAt)) last.push({ m, i });
+    else days.push([{ m, i }]);
+  });
+  return days;
+}
+
 export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone }: { conversation: ChatConversation; onBack?: () => void; jumpSeq?: number | null; onJumpDone?: () => void }) {
   const qc = useQueryClient();
   const me = useMe();
@@ -410,51 +421,54 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
                 </div>
               )}
 
-              {messages.map((m, i) => {
-                const prev = messages[i - 1];
-                const newDay = !prev || !sameDay(prev.createdAt, m.createdAt);
-                const first =
-                  newDay ||
-                  !prev ||
-                  m.id === dividerId ||
-                  prev.kind !== 'text' ||
-                  prev.senderId !== m.senderId ||
-                  new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() > GROUP_GAP_MS;
-                return (
-                  <Fragment key={m.id}>
-                    {newDay && (
-                      <div className="sticky top-0 z-[5] flex justify-center py-2">
-                        <span className="rounded-full border border-border bg-surface/90 px-3 py-0.5 text-[11px] font-medium text-muted shadow-soft backdrop-blur">{dayLabel(m.createdAt)}</span>
-                      </div>
-                    )}
-                    {m.id === dividerId && (
-                      <div className="my-2 flex items-center gap-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-danger">
-                        <span className="h-px flex-1 bg-danger/40" />
-                        Neue Nachrichten
-                        <span className="h-px flex-1 bg-danger/40" />
-                      </div>
-                    )}
-                    <MessageItem
-                      message={m}
-                      me={me}
-                      users={users}
-                      isGroup={c.kind === 'group'}
-                      first={first}
-                      canModerate={canModerate}
-                      readState={m.id === lastMine?.id ? readState : null}
-                      highlighted={highlight === m.id}
-                      caps={caps}
-                      onReply={onReply}
-                      onEdit={onEdit}
-                      onDelete={onDelete}
-                      onReact={onReact}
-                      onJump={onJump}
-                      onMediaLoad={onMediaLoad}
-                      callJoinUrl={c.call ? callUrl : null}
-                    />
-                  </Fragment>
-                );
-              })}
+              {/* Je Tag ein eigener Abschnitt: die Datums-Pille klebt nur innerhalb ihres Tages
+                  und wird vom nächsten Tag weggeschoben, statt sich oben zu stapeln */}
+              {dayGroups(messages).map((day) => (
+                <section key={new Date(day[0]!.m.createdAt).toDateString()}>
+                  <div className="sticky top-0 z-[5] flex justify-center py-2">
+                    <span className="rounded-full border border-border bg-surface/90 px-3 py-0.5 text-[11px] font-medium text-muted shadow-soft backdrop-blur">{dayLabel(day[0]!.m.createdAt)}</span>
+                  </div>
+                  {day.map(({ m, i }) => {
+                    const prev = messages[i - 1];
+                    const first =
+                      i === day[0]!.i ||
+                      !prev ||
+                      m.id === dividerId ||
+                      prev.kind !== 'text' ||
+                      prev.senderId !== m.senderId ||
+                      new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() > GROUP_GAP_MS;
+                    return (
+                      <Fragment key={m.id}>
+                        {m.id === dividerId && (
+                          <div className="my-2 flex items-center gap-3 px-5 text-[11px] font-semibold uppercase tracking-wide text-danger">
+                            <span className="h-px flex-1 bg-danger/40" />
+                            Neue Nachrichten
+                            <span className="h-px flex-1 bg-danger/40" />
+                          </div>
+                        )}
+                        <MessageItem
+                          message={m}
+                          me={me}
+                          users={users}
+                          isGroup={c.kind === 'group'}
+                          first={first}
+                          canModerate={canModerate}
+                          readState={m.id === lastMine?.id ? readState : null}
+                          highlighted={highlight === m.id}
+                          caps={caps}
+                          onReply={onReply}
+                          onEdit={onEdit}
+                          onDelete={onDelete}
+                          onReact={onReact}
+                          onJump={onJump}
+                          onMediaLoad={onMediaLoad}
+                          callJoinUrl={c.call ? callUrl : null}
+                        />
+                      </Fragment>
+                    );
+                  })}
+                </section>
+              ))}
             </>
           )}
         </div>

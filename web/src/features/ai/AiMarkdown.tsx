@@ -3,6 +3,7 @@
  * ohne HTML-Einschleusung. Quellenverweise wie [2] werden zu Links auf die Mail.
  */
 import { Fragment, type ReactNode } from 'react';
+import { CodeBlock } from '@/features/chat/CodeBlock';
 import { parseMarkdown, type Inline, type Line } from '@/features/chat/markdown';
 
 /** Was Modelle gern ausgeben, der Chat-Parser aber nicht kennt, vereinfachen */
@@ -92,11 +93,7 @@ export function AiMarkdown({ text, cite }: { text: string; cite?: (n: number) =>
           case 'p':
             return <p key={k}>{renderLines(b.lines, k, cite)}</p>;
           case 'code':
-            return (
-              <pre key={k} className="overflow-x-auto rounded-md bg-black/5 px-3 py-2 font-mono text-xs dark:bg-white/5">
-                {b.v}
-              </pre>
-            );
+            return <CodeBlock key={k} code={b.v} lang={b.lang} compact />;
           case 'quote':
             return (
               <blockquote key={k} className="border-l-2 border-border-strong pl-3 text-muted">

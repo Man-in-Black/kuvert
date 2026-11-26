@@ -21,7 +21,7 @@ export type Line = Inline[];
 
 export type Block =
   | { t: 'p'; lines: Line[] }
-  | { t: 'code'; v: string }
+  | { t: 'code'; v: string; lang?: string }
   | { t: 'quote'; lines: Line[] }
   | { t: 'ul'; items: Line[][] }
   | { t: 'ol'; start: number; items: Line[][] };
@@ -57,10 +57,13 @@ const CONTINUATION = /^\s{2,}\S/;
 
 export function parseMarkdown(md: string): Block[] {
   const blocks: Block[] = [];
-  const parts = md.replace(/\r\n?/g, '\n').split(/```(?:[\w+-]*\n)?([\s\S]*?)```/g);
+  // Teile im Dreierschritt: Text, Sprache (```json), Codeinhalt
+  const parts = md.replace(/\r\n?/g, '\n').split(/```(?:([\w+#.-]*)\n)?([\s\S]*?)```/g);
   parts.forEach((part, idx) => {
-    if (idx % 2 === 1) {
-      blocks.push({ t: 'code', v: part.replace(/\n$/, '') });
+    if (idx % 3 === 1) return;
+    if (idx % 3 === 2) {
+      const lang = parts[idx - 1]?.trim();
+      blocks.push(lang ? { t: 'code', v: part.replace(/\n$/, ''), lang } : { t: 'code', v: part.replace(/\n$/, '') });
       return;
     }
     let text = part;
@@ -133,7 +136,7 @@ export function markdownToHtml(md: string): string {
         case 'p':
           return linesToParagraphs(b.lines);
         case 'code':
-          return `<pre><code>${esc(b.v)}</code></pre>`;
+          return `<pre><code${b.lang ? ` class="language-${esc(b.lang)}"` : ''}>${esc(b.v)}</code></pre>`;
         case 'quote':
           return `<blockquote>${linesToParagraphs(b.lines)}</blockquote>`;
         case 'ul':
@@ -211,7 +214,7 @@ function blockMd(n: JSONContent): string {
     case 'heading':
       return `**${inlineMd(n.content)}**`;
     case 'codeBlock':
-      return `\`\`\`\n${(n.content ?? []).map((c) => c.text ?? '').join('')}\n\`\`\``;
+      return `\`\`\`${typeof n.attrs?.language === 'string' ? n.attrs.language : ''}\n${(n.content ?? []).map((c) => c.text ?? '').join('')}\n\`\`\``;
     case 'blockquote':
       return (n.content ?? [])
         .map(blockMd)
