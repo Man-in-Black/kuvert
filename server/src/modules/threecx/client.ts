@@ -67,6 +67,53 @@ export interface CcEntity {
   participants: CcParticipant[];
 }
 
+export interface XapiUser {
+  Id: number;
+  Number?: string | null;
+  FirstName?: string | null;
+  LastName?: string | null;
+  DisplayName?: string | null;
+  EmailAddress?: string | null;
+  Mobile?: string | null;
+  CurrentProfileName?: string | null;
+  IsRegistered?: boolean | null;
+  HideInPhonebook?: boolean | null;
+  Enabled?: boolean | null;
+}
+
+export interface XapiContact {
+  Id: number;
+  FirstName?: string | null;
+  LastName?: string | null;
+  CompanyName?: string | null;
+  Department?: string | null;
+  Title?: string | null;
+  Email?: string | null;
+  PhoneNumber?: string | null;
+  Business?: string | null;
+  Home?: string | null;
+  Other?: string | null;
+  BusinessFax?: string | null;
+}
+
+export interface XapiCallLogRow {
+  CallId?: number;
+  CdrId?: string;
+  CallHistoryId?: string | null;
+  StartTime?: string | null;
+  Direction?: string | null;
+  Status?: string | null;
+  Answered?: boolean | null;
+  TalkingDuration?: string | null;
+  SourceDn?: string | null;
+  SourceCallerId?: string | null;
+  SourceDisplayName?: string | null;
+  DestinationDn?: string | null;
+  DestinationCallerId?: string | null;
+  DestinationDisplayName?: string | null;
+  actionDnDn?: string | null;
+}
+
 export interface CcCallControlResult {
   finalstatus?: string;
   reason?: string;
@@ -74,7 +121,17 @@ export interface CcCallControlResult {
   result?: CcParticipant;
 }
 
+type Method = 'GET' | 'POST' | 'PATCH';
+
 const tokens = new Map<string, { token: string; expires: number }>();
+
+/** OData-Abfrage (Leerzeichen als %20, nicht +) */
+export function odata(query: Record<string, string | number | boolean | undefined>): string {
+  const parts = Object.entries(query)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`);
+  return parts.length ? `?${parts.join('&')}` : '';
+}
 
 export class ThreeCxClient {
   constructor(
@@ -102,18 +159,18 @@ export class ThreeCxClient {
       throw new AppError(502, 'threecx_unreachable', `3CX nicht erreichbar: ${(err as Error).message}`);
     }
     if (!res.ok) {
-      if (res.status === 400 || res.status === 401) throw new AppError(400, 'threecx_auth', '3CX: Client-ID oder API-Schlüssel ungültig');
+      if (res.status === 400 || res.status === 401) throw new AppError(400, 'threecx_credentials', '3CX: Client-ID oder API-Schlüssel ungültig');
       throw new HttpError(res.status, `3CX-Anmeldung fehlgeschlagen (${res.status})`);
     }
     const data = (await res.json()) as { access_token?: string; expires_in?: number };
-    if (!data.access_token) throw new AppError(502, 'threecx_auth', '3CX: Antwort ohne Zugriffstoken');
+    if (!data.access_token) throw new AppError(502, 'threecx_token', '3CX: Antwort ohne Zugriffstoken');
     // Eine Minute Puffer vor Ablauf
     const ttl = Math.max(60, (data.expires_in ?? 3600) - 60) * 1000;
     tokens.set(this.cacheKey, { token: data.access_token, expires: Date.now() + ttl });
     return data.access_token;
   }
 
-  async request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<Response> {
+  async request(method: Method, path: string, body?: unknown): Promise<Response> {
     const send = async (token: string) => {
       try {
         return await fetch(`${this.baseUrl}${path}`, {
@@ -159,7 +216,7 @@ export class ThreeCxClient {
     }
   }
 
-  async json<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ status: number; data: T | null }> {
+  async json<T>(method: Method, path: string, body?: unknown): Promise<{ status: number; data: T | null }> {
     const res = await this.request(method, path, body);
     const text = await res.text();
     return { status: res.status, data: text ? (JSON.parse(text) as T) : null };
@@ -194,13 +251,61 @@ export class ThreeCxClient {
     return this.json<CcCallControlResult>('POST', path, { destination, timeout: 30 });
   }
 
-  /* ───────────── Konfigurations-API (optional) ───────────── */
+  /** Aktuelle Gespräche einer Nebenstelle */
+  async participants(dn: string): Promise<CcParticipant[]> {
+    return (await this.json<CcParticipant[]>('GET', `/callcontrol/${encodeURIComponent(dn)}/participants`)).data ?? [];
+  }
 
-  /** Benutzer der Anlage mit Nebenstelle und E-Mail (braucht „3CX Configuration API Access“) */
+  async drop(dn: string, participantId: number): Promise<void> {
+    await this.request('POST', `/callcontrol/${encodeURIComponent(dn)}/participants/${participantId}/drop`, {});
+  }
+
+  /* ───────────── Konfigurations-API (optional, braucht „3CX Configuration API Access“) ───────────── */
+
+  async xapi<T>(path: string, query: Record<string, string | number | boolean | undefined> = {}): Promise<T> {
+    return (await this.json<T>('GET', `/xapi/v1/${path}${odata(query)}`)).data as T;
+  }
+
+  /** Benutzer der Anlage (Nebenstellen) */
+  async pbxUsers(): Promise<XapiUser[]> {
+    const data = await this.xapi<{ value?: XapiUser[] }>('Users', {
+      $select: 'Id,Number,FirstName,LastName,DisplayName,EmailAddress,Mobile,CurrentProfileName,IsRegistered,HideInPhonebook,Enabled',
+      $top: 2000,
+    });
+    return data?.value ?? [];
+  }
+
+  /** Benutzer der Anlage mit Nebenstelle und E-Mail (für die automatische Zuordnung) */
   async users(): Promise<{ number: string; email: string }[]> {
-    const { data } = await this.json<{ value?: { Number?: string; EmailAddress?: string }[] }>('GET', '/xapi/v1/Users?$select=Number,EmailAddress');
-    return (data?.value ?? [])
+    return (await this.pbxUsers())
       .filter((u) => u.Number && u.EmailAddress)
       .map((u) => ({ number: String(u.Number), email: String(u.EmailAddress).trim().toLowerCase() }));
+  }
+
+  async setProfile(userId: number, profile: string): Promise<void> {
+    await this.request('PATCH', `/xapi/v1/Users(${userId})`, { CurrentProfileName: profile });
+  }
+
+  /** Telefonbuch der Anlage */
+  async contacts(): Promise<XapiContact[]> {
+    const data = await this.xapi<{ value?: XapiContact[] }>('Contacts', {
+      $select: 'Id,FirstName,LastName,CompanyName,Department,Title,Email,PhoneNumber,Business,Home,Other,BusinessFax',
+      $top: 5000,
+    });
+    return data?.value ?? [];
+  }
+
+  /**
+   * Anrufliste (wie „Berichte → Anrufbericht“). Parameter in Klammern gehören zur URL und
+   * brauchen auch leer einen Wert; Zeichenketten in einfachen Anführungszeichen.
+   */
+  async callLog(from: Date, to: Date, query: Record<string, string | number | boolean | undefined>): Promise<XapiCallLogRow[]> {
+    const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const fn =
+      `ReportCallLogData/Pbx.GetCallLogData(periodFrom=${iso(from)},periodTo=${iso(to)},sourceType=0,sourceFilter='',` +
+      `destinationType=0,destinationFilter='',callsType=0,callTimeFilterType=0,callTimeFilterFrom='0:00:0',` +
+      `callTimeFilterTo='0:00:0',hidePcalls=false)`;
+    const data = await this.xapi<{ value?: XapiCallLogRow[] }>(fn, query);
+    return data?.value ?? [];
   }
 }

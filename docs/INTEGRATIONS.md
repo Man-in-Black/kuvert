@@ -105,6 +105,28 @@ zugeordnete Nebenstelle bleiben Telefonnummern normale `tel:`-Links.
 4. Benutzer wählen unter **Einstellungen → Telefonie** auf Wunsch ihr bevorzugtes Gerät
    (Tischtelefon, App, Webclient) und können einen Probeanruf starten.
 
+### Bereich „Telefon“
+
+Mit aktiver Anbindung gibt es in der Navigation den Bereich **Telefon**:
+
+| Teil | Inhalt | Quelle in 3CX |
+|---|---|---|
+| **Wahlfeld** | Nummer oder Nebenstelle eintippen bzw. per Tastenfeld wählen, Enter startet den Anruf | Call Control API |
+| **Laufendes Gespräch** | Gegenstelle und Zustand (klingelt, verbunden …) mit **Auflegen** – nur eigene Gespräche | Call Control API |
+| **Mein Status** | Verfügbar, Abwesend, Nicht stören, Mittagspause, Dienstreise | Konfigurations-API |
+| **Anrufliste** | Eigene Anrufe der letzten 14 Tage, nach Tagen gruppiert, Filter „Verpasste“, Rückruf per Klick | Konfigurations-API (Anrufbericht) |
+| **Telefonbuch** | Firmen-Telefonbuch der Anlage durchsuchen (Name, Firma, Nummer), anrufen oder Mail schreiben | Konfigurations-API |
+| **Kollegen** | Alle Nebenstellen mit Status, „telefoniert“ (bei überwachten Nebenstellen) und „abgemeldet“, Anruf auf Durchwahl oder Mobil | Konfigurations-API + Call Control |
+
+Deep-Link: `/phone?number=+4930123456` füllt das Wahlfeld, `/phone?tab=contacts&q=Müller` sucht im Telefonbuch.
+
+Für Status, Anrufliste, Telefonbuch und Kollegen braucht die API-Anwendung zusätzlich
+**„3CX Configuration API Access“**. Die Anrufliste liest den Anrufbericht der Anlage – laut 3CX-Community
+klappt das nur mit der Rolle **System-Eigentümer** (System Owner); mit „System-Administrator“ bleibt sie leer
+oder liefert einen Fehler. Jeder Benutzer sieht nur die Anrufe seiner eigenen Nebenstelle; Benutzer,
+die in 3CX „im Telefonbuch ausblenden“ haben, erscheinen nicht unter Kollegen. Fehlt die Freigabe,
+zeigen die Reiter einen Hinweis, Wahlfeld und Auflegen funktionieren trotzdem.
+
 Alternativ per Umgebung vorbelegen (aktiviert die Anbindung, bis im Admin-Bereich gespeichert wird):
 
 ```env

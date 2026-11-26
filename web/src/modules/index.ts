@@ -19,13 +19,14 @@ import archive from '@/features/archive/module';
 import search from '@/features/search/module';
 import chat from '@/features/chat/module';
 import triage from '@/features/triage/module';
-import threecx from '@/features/threecx/module';
+import threecx, { phoneModule } from '@/features/threecx/module';
 
 export const allModules: WebModule[] = [
   mail,
   chat,
   calendar,
   contacts,
+  phoneModule,
   tasks,
   files,
   archive,

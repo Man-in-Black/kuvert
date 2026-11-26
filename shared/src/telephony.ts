@@ -66,3 +66,71 @@ export interface ThreeCxCallResult {
   destination: string;
   message: string;
 }
+
+/* ───────────── Bereich „Telefon“ (3CX-Konfigurations-API + Call Control) ───────────── */
+
+/** Anwesenheitsprofile von 3CX V20 (CurrentProfileName) */
+export type ThreeCxProfile = 'Available' | 'Away' | 'Out of office' | 'Custom 1' | 'Custom 2';
+
+/** Eintrag im 3CX-Telefonbuch */
+export interface ThreeCxContact {
+  id: number;
+  name: string;
+  company: string | null;
+  department: string | null;
+  title: string | null;
+  email: string | null;
+  phones: { type: 'mobile' | 'work' | 'home' | 'other' | 'fax'; number: string }[];
+}
+
+/** Kollege (3CX-Benutzer) mit Status */
+export interface ThreeCxColleague {
+  extension: string;
+  name: string;
+  email: string | null;
+  mobile: string | null;
+  /** Anwesenheitsprofil, z. B. "Available" */
+  profile: string | null;
+  /** Mindestens ein Gerät angemeldet */
+  registered: boolean;
+  /** Gerade im Gespräch oder klingelt (nur für überwachte Nebenstellen bekannt) */
+  onCall: boolean | null;
+  /** Das bin ich */
+  me: boolean;
+}
+
+export interface ThreeCxColleagueList {
+  colleagues: ThreeCxColleague[];
+  /** Eigenes Anwesenheitsprofil */
+  myProfile: string | null;
+}
+
+export type ThreeCxCallDirection = 'in' | 'out' | 'missed' | 'internal';
+
+/** Eintrag der eigenen Anrufliste */
+export interface ThreeCxCallLogEntry {
+  id: string;
+  start: string;
+  direction: ThreeCxCallDirection;
+  /** Gegenstelle: Name (falls bekannt) und Nummer zum Zurückrufen */
+  name: string | null;
+  number: string | null;
+  answered: boolean;
+  /** Gesprächsdauer in Sekunden */
+  talkSeconds: number;
+  status: string | null;
+}
+
+export interface ThreeCxCallLog {
+  entries: ThreeCxCallLogEntry[];
+  days: number;
+}
+
+/** Laufendes Gespräch der eigenen Nebenstelle */
+export interface ThreeCxActiveCall {
+  participantId: number;
+  /** Ringing, Dialing, Connected … (Wert von 3CX) */
+  status: string;
+  name: string | null;
+  number: string | null;
+}

@@ -10,11 +10,16 @@
  * Vorbelegung per Umgebung: THREECX_URL, THREECX_CLIENT_ID, THREECX_API_KEY
  */
 import { z } from 'zod';
+import type { FastifyRequest } from 'fastify';
 import type {
+  ThreeCxActiveCall,
   ThreeCxAdminConfig,
   ThreeCxAssignmentList,
   ThreeCxAutoAssignResult,
+  ThreeCxCallLog,
   ThreeCxCallResult,
+  ThreeCxColleagueList,
+  ThreeCxContact,
   ThreeCxMe,
   ThreeCxTestResult,
 } from '@kuvert/shared';
@@ -25,11 +30,24 @@ import { users } from '../../core/users.js';
 import { requireAdmin } from '../../routes/admin.js';
 import { parse } from '../../routes/util.js';
 import { normalizeExtension, normalizeNumber, normalizeThreeCxUrl } from './client.js';
+import { activeCalls, callLog, colleagues, searchContacts, setMyProfile } from './directory.js';
 import { adminConfig, extensions, migrations } from './store.js';
 
 type IdParams = { Params: { id: string } };
 
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** Profile, die 3CX V20 kennt (Verfügbar, Abwesend, Nicht stören, Mittagspause, Dienstreise) */
+const PROFILES = ['Available', 'Away', 'Out of office', 'Custom 1', 'Custom 2'] as const;
+
+/** Anbindung aktiv und Nebenstelle zugeordnet – sonst verständlicher Fehler */
+function mine(req: FastifyRequest) {
+  if (!adminConfig.ready()) throw new AppError(403, 'threecx_disabled', 'Die 3CX-Anbindung ist nicht aktiv');
+  const row = extensions.get(req.user.id);
+  if (!row) throw new AppError(409, 'threecx_no_extension', 'Dir ist noch keine 3CX-Nebenstelle zugeordnet – bitte an den Administrator wenden');
+  const cfg = adminConfig.get();
+  return { row, client: adminConfig.client(), cacheKey: `${cfg.baseUrl}|${cfg.clientId}` };
+}
 
 export default defineModule({
   id: 'threecx',
@@ -182,14 +200,11 @@ export default defineModule({
     /* ═════════════════════════════ Anrufen ═════════════════════════════ */
 
     app.post('/call', async (req): Promise<ThreeCxCallResult> => {
-      if (!adminConfig.ready()) throw new AppError(403, 'threecx_disabled', 'Die 3CX-Anbindung ist nicht aktiv');
-      const row = extensions.get(req.user.id);
-      if (!row) throw new AppError(409, 'threecx_no_extension', 'Dir ist noch keine 3CX-Nebenstelle zugeordnet – bitte an den Administrator wenden');
+      const { row, client } = mine(req);
       const b = parse(z.object({ number: z.string().min(1).max(100) }), req.body);
       const destination = normalizeNumber(b.number, adminConfig.get().plusPrefix);
       if (destination === row.extension) throw new BadRequestError('Das ist deine eigene Nebenstelle');
 
-      const client = adminConfig.client();
       const devices = await client.devices(row.extension);
       if (!devices.length) {
         throw new AppError(409, 'threecx_no_device', `Für Nebenstelle ${row.extension} ist kein Telefon und keine 3CX-App angemeldet`);
@@ -205,6 +220,49 @@ export default defineModule({
         destination,
         message: started ? `Anruf an ${destination} wird aufgebaut` : `Anruf an ${destination} an 3CX übergeben`,
       };
+    });
+
+    /** Laufende Gespräche der eigenen Nebenstelle */
+    app.get('/calls/active', async (req): Promise<ThreeCxActiveCall[]> => {
+      const { row, client } = mine(req);
+      return activeCalls(client, row.extension);
+    });
+
+    app.post<{ Params: { pid: string } }>('/calls/active/:pid/drop', async (req) => {
+      const { row, client } = mine(req);
+      const pid = Number(req.params.pid);
+      if (!Number.isInteger(pid)) throw new BadRequestError('Ungültige Gesprächs-ID');
+      // Nur eigene Gespräche beenden
+      if (!(await activeCalls(client, row.extension)).some((c) => c.participantId === pid)) throw new AppError(404, 'not_found', 'Gespräch nicht (mehr) vorhanden');
+      await client.drop(row.extension, pid);
+      return { ok: true };
+    });
+
+    /* ═════════════════════════════ Bereich „Telefon“ (Konfigurations-API) ═════════════════════════════ */
+
+    app.get('/calls/log', async (req): Promise<ThreeCxCallLog> => {
+      const { row, client } = mine(req);
+      const q = parse(z.object({ days: z.coerce.number().int().min(1).max(90).default(14) }), req.query);
+      return callLog(client, row.extension, q.days);
+    });
+
+    app.get('/contacts', async (req): Promise<ThreeCxContact[]> => {
+      const { client, cacheKey } = mine(req);
+      const q = parse(z.object({ q: z.string().max(200).default('') }), req.query);
+      return searchContacts(client, cacheKey, q.q.trim());
+    });
+
+    app.get('/colleagues', async (req): Promise<ThreeCxColleagueList> => {
+      const { row, client, cacheKey } = mine(req);
+      const q = parse(z.object({ refresh: z.string().optional() }), req.query);
+      return colleagues(client, cacheKey, row.extension, q.refresh === '1');
+    });
+
+    app.put('/me/profile', async (req) => {
+      const { row, client, cacheKey } = mine(req);
+      const b = parse(z.object({ profile: z.enum(PROFILES) }), req.body);
+      await setMyProfile(client, cacheKey, row.extension, b.profile);
+      return { ok: true };
     });
   },
 });
