@@ -166,6 +166,16 @@ function ConnectionCard({ data }: { data: ThreeCxAdminConfig }) {
             </span>
           </div>
         )}
+        {testResult?.configApi && (
+          <div
+            className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-sm ${
+              testResult.configApi.ok ? 'border-success/30 bg-success/5' : 'border-warning/30 bg-warning/5'
+            }`}
+          >
+            {testResult.configApi.ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />}
+            <span>{testResult.configApi.message}</span>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
             Speichern

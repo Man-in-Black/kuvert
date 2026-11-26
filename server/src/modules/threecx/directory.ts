@@ -12,10 +12,14 @@ async function xapi<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } catch (err) {
     if (err instanceof AppError && (err.code === 'threecx_auth' || err.code === 'threecx_forbidden')) {
+      // Antwort von 3CX mitgeben – sonst ist nicht zu erkennen, was genau fehlt
+      const up = err.details as { status?: number; detail?: string; path?: string } | undefined;
+      const info = up?.status ? ` (3CX: HTTP ${up.status}${up.path ? ` bei ${up.path}` : ''}${up.detail ? ` – ${up.detail}` : ''})` : '';
       throw new AppError(
         403,
         'threecx_no_config_api',
-        'Die 3CX-API-Anwendung darf die Konfigurations-API nicht nutzen. In 3CX unter Integrationen → API „3CX Configuration API Access“ aktivieren und eine Rolle mit ausreichenden Rechten wählen (für die Anrufliste: System-Eigentümer).',
+        `Die 3CX-API-Anwendung darf die Konfigurations-API nicht nutzen. In 3CX unter Integrationen → API „3CX Configuration API Access“ aktivieren und eine Rolle mit ausreichenden Rechten wählen (für die Anrufliste: System-Eigentümer).${info}`,
+        up,
       );
     }
     throw err;

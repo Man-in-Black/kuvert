@@ -123,7 +123,7 @@ export interface CcCallControlResult {
 
 type Method = 'GET' | 'POST' | 'PATCH';
 
-const tokens = new Map<string, { token: string; expires: number }>();
+const tokens = new Map<string, { token: string; expires: number; issued: number }>();
 
 /** OData-Abfrage (Leerzeichen als %20, nicht +) */
 export function odata(query: Record<string, string | number | boolean | undefined>): string {
@@ -166,7 +166,7 @@ export class ThreeCxClient {
     if (!data.access_token) throw new AppError(502, 'threecx_token', '3CX: Antwort ohne Zugriffstoken');
     // Eine Minute Puffer vor Ablauf
     const ttl = Math.max(60, (data.expires_in ?? 3600) - 60) * 1000;
-    tokens.set(this.cacheKey, { token: data.access_token, expires: Date.now() + ttl });
+    tokens.set(this.cacheKey, { token: data.access_token, expires: Date.now() + ttl, issued: Date.now() });
     return data.access_token;
   }
 
@@ -188,8 +188,12 @@ export class ThreeCxClient {
       }
     };
     let res = await send(await this.token());
-    // Token kann vor Ablauf ungültig werden (z. B. Schlüssel neu erzeugt)
-    if (res.status === 401) res = await send(await this.token(true));
+    // Token kann vor Ablauf ungültig werden (Schlüssel neu erzeugt) oder alte Rechte tragen: Die
+    // Berechtigungen (Konfigurations-API, Rolle) stecken im Token. Wurden sie in 3CX nachträglich
+    // freigegeben, hilft nur ein neues. Bei 403 höchstens einmal pro Minute erneuern – 403 ist auch
+    // die normale Antwort für nicht überwachte Nebenstellen.
+    const issued = tokens.get(this.cacheKey)?.issued ?? 0;
+    if (res.status === 401 || (res.status === 403 && Date.now() - issued > 60_000)) res = await send(await this.token(true));
     if (res.ok) return res;
 
     const text = await res.text().catch(() => '');
@@ -200,12 +204,13 @@ export class ThreeCxClient {
     } catch {
       detail = text.slice(0, 200);
     }
+    const upstream = { status: res.status, detail, path: path.split('?')[0] };
     switch (res.status) {
       case 401:
         // Bewusst kein 401 (würde im Frontend als "abgemeldet" gewertet)
-        throw new AppError(400, 'threecx_auth', '3CX: Zugriff verweigert – API-Schlüssel oder Lizenz prüfen (Call Control braucht 8SC+ ENT/AI)');
+        throw new AppError(400, 'threecx_auth', `3CX: Zugriff verweigert – API-Schlüssel oder Lizenz prüfen (Call Control braucht 8SC+ ENT/AI)${detail ? ` – ${detail}` : ''}`, upstream);
       case 403:
-        throw new AppError(403, 'threecx_forbidden', `3CX: nicht erlaubt${detail ? ` – ${detail}` : ''}`);
+        throw new AppError(403, 'threecx_forbidden', `3CX: nicht erlaubt${detail ? ` – ${detail}` : ''}`, upstream);
       case 404:
         throw new AppError(404, 'not_found', `3CX: nicht gefunden${detail ? ` – ${detail}` : ''}`);
       case 422:

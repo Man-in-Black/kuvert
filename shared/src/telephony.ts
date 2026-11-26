@@ -20,6 +20,8 @@ export interface ThreeCxTestResult {
   message: string;
   /** Nebenstellen, die die API-Anwendung überwachen darf */
   monitored?: string[];
+  /** Ergebnis für die Konfigurations-API (Status, Anrufliste, Telefonbuch, Kollegen) */
+  configApi?: { ok: boolean; message: string };
 }
 
 /** Zuordnung Kuvert-Benutzer ↔ 3CX-Nebenstelle (Admin) */

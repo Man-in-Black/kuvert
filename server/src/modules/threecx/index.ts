@@ -106,9 +106,22 @@ export default defineModule({
       });
       const entities = await client.entities();
       const monitored = entities.map((e) => e.dn).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
+      // Konfigurations-API getrennt prüfen (Schnelltest laut 3CX-Doku) – sie ist optional
+      let configApi: ThreeCxTestResult['configApi'];
+      try {
+        const n = (await client.pbxUsers()).length;
+        configApi = { ok: true, message: `Konfigurations-API erreichbar – ${n} Benutzer sichtbar` };
+      } catch (err) {
+        const up = err instanceof AppError ? (err.details as { status?: number } | undefined) : undefined;
+        configApi = {
+          ok: false,
+          message: `Konfigurations-API nicht nutzbar${up?.status ? ` (HTTP ${up.status})` : ''}: ${errText(err)}`,
+        };
+      }
       return {
         ok: true,
         monitored,
+        configApi,
         message: monitored.length
           ? `Verbunden – ${monitored.length} Nebenstelle${monitored.length === 1 ? '' : 'n'} abrufbar`
           : 'Verbunden – aber keine Nebenstellen abrufbar. In 3CX unter Integrationen → API die zu überwachenden Nebenstellen eintragen.',
