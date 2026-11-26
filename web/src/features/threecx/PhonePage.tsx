@@ -472,6 +472,60 @@ function ColleagueStatus({ c }: { c: ThreeCxColleague }) {
   );
 }
 
+/** Farbe des Punkts am Avatar: telefoniert > abgemeldet > Anwesenheitsprofil */
+function presenceDot(c: ThreeCxColleague) {
+  if (c.onCall) return 'bg-danger';
+  if (!c.registered) return 'bg-subtle';
+  return PROFILE_DOT[c.profile ?? ''] ?? 'bg-muted';
+}
+
+function ColleagueTile({ c, onCall }: { c: ThreeCxColleague; onCall: (n: string) => Promise<void> }) {
+  return (
+    <li
+      className={cn(
+        'group relative flex flex-col rounded-2xl border bg-surface shadow-card transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-soft',
+        c.onCall ? 'border-danger/40' : 'border-border',
+      )}
+    >
+      <button
+        type="button"
+        className="flex flex-1 flex-col items-center px-3 pb-3 pt-4 text-center"
+        title={`${c.name} anrufen (${c.extension})`}
+        onClick={() => void onCall(c.extension)}
+      >
+        <span className={cn('relative', !c.registered && !c.onCall && 'opacity-60')}>
+          <Avatar name={c.name} email={c.email ?? undefined} size={52} />
+          <span className={cn('absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full ring-2 ring-surface', presenceDot(c))} />
+        </span>
+        <span className="mt-2.5 line-clamp-2 text-sm font-medium leading-snug">{c.name}</span>
+        <span className="mt-0.5 text-xs text-muted">Durchwahl {c.extension}</span>
+        <span className="mt-2">
+          <ColleagueStatus c={c} />
+        </span>
+      </button>
+      <div className="flex border-t border-border text-xs">
+        <button
+          type="button"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-bl-2xl py-2 text-primary hover:bg-primary-soft"
+          onClick={() => void onCall(c.extension)}
+        >
+          <PhoneCall className="h-3.5 w-3.5" /> Anrufen
+        </button>
+        {c.mobile && (
+          <button
+            type="button"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-br-2xl border-l border-border py-2 text-muted hover:bg-hover hover:text-fg"
+            title={`Mobil anrufen (${c.mobile})`}
+            onClick={() => void onCall(c.mobile!)}
+          >
+            <Smartphone className="h-3.5 w-3.5" /> Mobil
+          </button>
+        )}
+      </div>
+    </li>
+  );
+}
+
 function ColleagueList({ q, onCall }: { q: string; onCall: (n: string) => Promise<void> }) {
   const { data, error } = useColleagues(true);
   const needle = q.toLowerCase();
@@ -486,29 +540,10 @@ function ColleagueList({ q, onCall }: { q: string; onCall: (n: string) => Promis
     );
   }
   return (
-    <Card bodyClassName="p-0">
-      <ul className="divide-y divide-border">
-        {list.map((c) => (
-          <li key={c.extension} className="flex items-center gap-3 px-4 py-2.5">
-            <Avatar name={c.name} email={c.email ?? undefined} size={36} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">{c.name}</div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
-                <span>Durchwahl {c.extension}</span>
-                <ColleagueStatus c={c} />
-              </div>
-            </div>
-            {c.mobile && (
-              <IconButton label={`Mobil anrufen (${c.mobile})`} onClick={() => void onCall(c.mobile!)}>
-                <Smartphone className="h-4 w-4" />
-              </IconButton>
-            )}
-            <IconButton label={`${c.name} anrufen (${c.extension})`} onClick={() => void onCall(c.extension)}>
-              <PhoneCall className="h-4 w-4" />
-            </IconButton>
-          </li>
-        ))}
-      </ul>
-    </Card>
+    <ul className="grid grid-cols-[repeat(auto-fill,minmax(12.5rem,1fr))] gap-3">
+      {list.map((c) => (
+        <ColleagueTile key={c.extension} c={c} onCall={onCall} />
+      ))}
+    </ul>
   );
 }
