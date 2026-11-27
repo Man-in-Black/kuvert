@@ -22,6 +22,7 @@ import triage from '@/features/triage/module';
 import threecx, { phoneModule } from '@/features/threecx/module';
 import timetrack from '@/features/timetrack/module';
 import meet, { meetAdminModule } from '@/features/meet/module';
+import paperless, { paperlessAdminModule } from '@/features/paperless/module';
 
 export const allModules: WebModule[] = [
   mail,
@@ -46,6 +47,8 @@ export const allModules: WebModule[] = [
   threecx,
   meet,
   meetAdminModule,
+  paperless,
+  paperlessAdminModule,
 ];
 
 export function activeModules(ctx: ModuleActivationContext): WebModule[] {

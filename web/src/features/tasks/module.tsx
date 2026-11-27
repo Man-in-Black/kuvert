@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { CheckSquare } from 'lucide-react';
 import type { WebModule } from '@/modules/types';
 import { Spinner } from '@/components/ui';
+import { MailTaskAction } from './MailTaskAction';
 
 const TasksPage = lazy(() => import('./TasksPage'));
 
@@ -24,6 +25,7 @@ const mod: WebModule = {
       ),
     },
   ],
+  messageActions: [MailTaskAction],
 };
 
 export default mod;

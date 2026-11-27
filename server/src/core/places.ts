@@ -3,8 +3,13 @@
  * (auch Unternehmen und Sehenswürdigkeiten) und Auflösen zur vollständigen Adresse.
  * Benötigt einen API-Schlüssel (Admin → Dienste → Google bzw. GOOGLE_PLACES_API_KEY).
  *
- * Kosten: Autocomplete-Anfragen mit Session-Token sind kostenlos, wenn die Sitzung mit
- * einem Place-Details-Aufruf endet. Dieser fragt nur `formattedAddress` ab (Essentials-SKU).
+ * Kosten (Session-Abrechnung): Endet die Sitzung mit einem Place-Details-Aufruf mit demselben
+ * Token, werden nur die ersten 12 Autocomplete-Anfragen berechnet, der Details-Aufruf fragt nur
+ * `formattedAddress` ab (Essentials-SKU; `displayName` wäre Pro und würde die Sitzung auf die
+ * Enterprise-+-Atmosphere-SKU heben). Abgebrochene Sitzungen werden je Anfrage abgerechnet.
+ * Ein Token darf nach dem Details-Aufruf nicht wiederverwendet werden (Frontend erzeugt neu).
+ *
+ * Darstellung: Vorschläge ohne Karte brauchen die Attribution „Google Maps“ (unübersetzt).
  */
 import type { PlaceDetails, PlaceSuggestion } from '@kuvert/shared';
 import { config } from '../config.js';

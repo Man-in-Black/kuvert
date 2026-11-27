@@ -2,7 +2,7 @@
  * Google Kalender (Calendar API v3) inkl. Google-Meet-Konferenzen.
  */
 import crypto from 'node:crypto';
-import type { Attendee, AttendeeStatus, CalendarEvent, CalendarInfo, EventInput, EventResponse } from '@kuvert/shared';
+import type { Attendee, AttendeeStatus, CalendarEvent, CalendarInfo, EventInput, EventResponse, ShowAs } from '@kuvert/shared';
 import { BadRequestError, HttpError } from '../../core/errors.js';
 import { htmlToText } from '../../core/mime.js';
 import type { CalendarProvider } from '../../core/providers.js';
@@ -44,6 +44,8 @@ interface GEvent {
   recurringEventId?: string;
   originalStartTime?: { date?: string; dateTime?: string; timeZone?: string };
   transparency?: 'opaque' | 'transparent';
+  eventType?: string;
+  extendedProperties?: { private?: Record<string, string>; shared?: Record<string, string> };
   attendees?: GAttendee[];
   organizer?: { email?: string; displayName?: string; self?: boolean };
   hangoutLink?: string;
@@ -79,6 +81,17 @@ function isMovedInstance(e: GEvent): boolean {
 }
 
 const looksLikeHtml = (s: string) => /<\/?[a-z][\s\S]*>/i.test(s);
+
+/** Von Google nicht abgebildete „Anzeigen als“-Stufen, die Kuvert am Termin mitführt */
+const SHOW_AS_PROP = 'kuvertShowAs';
+const KEEP_SHOW_AS: ShowAs[] = ['tentative', 'oof', 'workingElsewhere'];
+
+function googleShowAs(e: GEvent): ShowAs {
+  if (e.eventType === 'outOfOffice') return 'oof';
+  if (e.transparency === 'transparent') return 'free';
+  const kept = e.extendedProperties?.private?.[SHOW_AS_PROP] as ShowAs | undefined;
+  return kept && KEEP_SHOW_AS.includes(kept) ? kept : 'busy';
+}
 
 export class GoogleCalendarProvider implements CalendarProvider {
   constructor(private g: GoogleClient) {}
@@ -146,7 +159,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
       onlineMeetingUrl: e.hangoutLink ?? video,
       onlineMeetingProvider: e.hangoutLink || video ? (e.conferenceData?.conferenceSolution?.name ?? 'Google Meet') : undefined,
       status: e.status,
-      showAs: e.transparency === 'transparent' ? 'free' : 'busy',
+      showAs: googleShowAs(e),
       reminderMinutes: override ? override.minutes : e.reminders?.useDefault ? (defaultReminder ?? null) : null,
       myResponse: self?.responseStatus ? STATUS_MAP[self.responseStatus] : undefined,
       isOrganizer: e.organizer?.self ?? !e.attendees?.length,
@@ -230,7 +243,14 @@ export class GoogleCalendarProvider implements CalendarProvider {
           ? { useDefault: false, overrides: [] }
           : { useDefault: false, overrides: [{ method: 'popup', minutes: input.reminderMinutes }] };
     }
-    if (input.showAs !== undefined) body.transparency = input.showAs === 'free' ? 'transparent' : 'opaque';
+    if (input.showAs !== undefined) {
+      body.transparency = input.showAs === 'free' ? 'transparent' : 'opaque';
+      // Google kennt nur frei/beschäftigt: Feinere Stufen (Abwesend …) als eigene Eigenschaft merken
+      const extra = KEEP_SHOW_AS.includes(input.showAs) ? input.showAs : null;
+      if (extra || existing?.extendedProperties?.private?.[SHOW_AS_PROP]) {
+        body.extendedProperties = { private: { [SHOW_AS_PROP]: extra } };
+      }
+    }
     if (input.onlineMeeting && !existing?.hangoutLink && !existing?.conferenceData) {
       body.conferenceData = {
         createRequest: { requestId: crypto.randomUUID(), conferenceSolutionKey: { type: 'hangoutsMeet' } },

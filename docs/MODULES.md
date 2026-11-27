@@ -66,6 +66,7 @@ Vorgänge mit `audit.log('modul.aktion', { req, details })` protokollieren.
 | `afterSend` | nach erfolgreichem Versand | Statistik, CRM-Ablage |
 | `newMail` | neue Nachrichten im Posteingang erkannt (nur einreihen, nicht blockieren!) | Regeln/Filter, KI-Triage |
 | `messageList` | vor Auslieferung einer Nachrichtenliste (Ordner, gemeinsamer Posteingang, Suche) | KI-Triage hängt `triage` an |
+| `taskSources` | zusätzliche Aufgabenquelle ohne Mailkonto (eigene Pseudo-Konto-ID, voller `TasksProvider`) | Kuvert-eigene Aufgaben (`localtasks`) |
 
 ### Neuen Kontotyp (Provider) hinzufügen
 
@@ -140,8 +141,10 @@ export default mod;
 | `admin` | – | Seiten im Admin-Bereich (nur Administratoren) |
 | `composerToolbar` | `ComposerExtensionProps` | KI-Assistent, Teams-Meeting |
 | `composerOptions` | `ComposerExtensionProps` | zusätzliche Versandoptionen |
+| `composerAttachSources` | `ComposerAttachSource` (Dialog mit `AttachSourceDialogProps`) | weitere Einträge im Menü „Anhängen“, z. B. „Aus Paperless …“: `attach()` hängt eine Datei mit Fortschrittsanzeige an, `insertLink()` fügt einen Link ein |
 | `messageActions` | `MessageExtensionProps` | „Zusammenfassen“ |
 | `messageBanners` | `MessageExtensionProps` | Hinweise über dem Inhalt |
+| `attachmentActions` | `AttachmentExtensionProps` | Knöpfe an jedem Mail-Anhang, z. B. „An Paperless senden“ |
 | `conversationActions` | `ConversationExtensionProps` | Aktionen für eine ganze Unterhaltung (KI-Zusammenfassung, Triage) |
 | `services` | – | unsichtbare Dienste (Benachrichtigungen, Chat-Ereignisse) |
 | `actions` | `ShellAction` | globale Aktionen ohne eigene Seite: Seitenleiste links, Befehlspalette, mobil im „Mehr“-Menü |

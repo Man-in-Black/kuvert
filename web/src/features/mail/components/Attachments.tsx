@@ -7,6 +7,7 @@ import { useAccountsWith } from '@/lib/queries';
 import { formatSize } from '@/lib/utils';
 import { IconButton } from '@/components/ui';
 import { StoragePickerDialog } from '@/features/files/StorageBrowser';
+import { useExtensions } from '@/modules/context';
 import { attachmentUrl, type MessageRef } from '../api';
 import { AttachmentPreview, previewKind, type PreviewFile } from './AttachmentPreview';
 
@@ -26,6 +27,7 @@ const previewable = (a: AttachmentInfo) => previewKind(a) !== null;
 
 export function AttachmentList({ attachments, msgRef }: { attachments: AttachmentInfo[]; msgRef: MessageRef }) {
   const storage = useAccountsWith('storage');
+  const actionExt = useExtensions('attachmentActions');
   const [preview, setPreview] = useState<PreviewFile | null>(null);
   const [saving, setSaving] = useState<AttachmentInfo | null>(null);
   const visible = attachments.filter((a) => !a.inline || !a.contentId);
@@ -72,7 +74,7 @@ export function AttachmentList({ attachments, msgRef }: { attachments: Attachmen
         {visible.map((a) => {
           const Icon = iconFor(a.contentType, a.filename);
           return (
-            <div key={a.id} className="group flex w-64 items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2">
+            <div key={a.id} className={`group flex ${actionExt.length ? 'w-72' : 'w-64'} items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2`}>
               <Icon className="h-8 w-8 shrink-0 text-muted" strokeWidth={1.5} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm" title={a.filename}>
@@ -91,6 +93,9 @@ export function AttachmentList({ attachments, msgRef }: { attachments: Attachmen
                     <CloudUpload className="h-4 w-4" />
                   </IconButton>
                 )}
+                {actionExt.map((Action, i) => (
+                  <Action key={i} attachment={a} msgRef={msgRef} />
+                ))}
                 <a
                   href={attachmentUrl(msgRef, a.id)}
                   download={a.filename}

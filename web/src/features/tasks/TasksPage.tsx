@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, CalendarClock, CheckSquare, Circle, CircleCheck, ListTodo, Menu, Plus, Star, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CheckSquare, Circle, CircleCheck, ListTodo, Mail, Menu, MoreHorizontal, Pencil, Plus, Star, Trash2, X } from 'lucide-react';
 import type { AccountInfo, Task, TaskInput, TaskList } from '@kuvert/shared';
-import { Button, Checkbox, ColorDot, EmptyState, Field, IconButton, Input, Select, SidebarSheet, Spinner, Switch, Textarea, useConfirm } from '@/components/ui';
+import { Button, Checkbox, ColorDot, Dropdown, EmptyState, Field, IconButton, Input, Modal, Select, SidebarSheet, Spinner, Switch, Textarea, useConfirm } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { useAccountMap } from '@/lib/queries';
 import { cn } from '@/lib/utils';
+import { messageUrl } from '@/features/mail/links';
 import { useIsMobile } from '@/lib/useIsMobile';
 import {
+  createLocalList,
   createTask,
+  deleteLocalList,
   deleteTask,
   dueDate,
   dueInfo,
   listKey,
+  renameLocalList,
   sortTasks,
   toDueValue,
   todayString,
@@ -49,6 +53,8 @@ export default function TasksPage() {
   const [newTitle, setNewTitle] = useState('');
   const [newDue, setNewDue] = useState('');
   const [adding, setAdding] = useState(false);
+  const [listDialog, setListDialog] = useState<{ list?: TaskList } | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   // Mobil: Listen als Schublade
   const isMobile = useIsMobile();
@@ -117,6 +123,26 @@ export default function TasksPage() {
   }, [lists]);
 
   const invalidateList = (accountId: string, listId: string) => qc.invalidateQueries({ queryKey: ['tasks', 'items', accountId, listId] });
+  const invalidateLists = () => qc.invalidateQueries({ queryKey: ['tasks', 'lists'] });
+
+  const saveList = async (name: string) => {
+    const existing = listDialog?.list;
+    const saved = existing ? await renameLocalList(existing.id, name) : await createLocalList(name);
+    await invalidateLists();
+    if (!existing) setView({ kind: 'list', accountId: saved.accountId, listId: saved.id });
+  };
+
+  const removeList = async (l: TaskList) => {
+    if (!(await confirm(`Liste „${l.name}“ mit allen Aufgaben löschen?`, { danger: true }))) return;
+    try {
+      await deleteLocalList(l.id);
+      toast.success('Liste gelöscht');
+      if (view?.kind === 'list' && view.accountId === l.accountId && view.listId === l.id) setViewState(null);
+      await invalidateLists();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
 
   const toggle = async (t: Task) => {
     const completed = !t.completed;
@@ -185,27 +211,49 @@ export default function TasksPage() {
       )}
       {grouped.map(([accId, ls]) => {
         const acc = accountMap.get(accId);
+        const manageable = ls.some((l) => l.manageable);
         return (
           <div key={accId} className="mt-3">
             <div className="flex items-center gap-1.5 px-2 pb-1">
-              <ColorDot color={acc?.color} />
-              <span className="truncate text-xs font-semibold uppercase tracking-wide text-muted">{acc?.name ?? 'Konto'}</span>
+              {acc ? <ColorDot color={acc.color} /> : <CheckSquare className="h-3 w-3 text-primary" style={ls[0]?.sourceColor ? { color: ls[0].sourceColor } : undefined} />}
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-muted">{acc?.name ?? ls[0]?.sourceName ?? 'Konto'}</span>
+              {manageable && (
+                <button type="button" title="Neue Liste" aria-label="Neue Liste" className="rounded p-0.5 text-muted hover:bg-hover hover:text-fg" onClick={() => setListDialog({})}>
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             {ls.map((l) => {
               const active = view?.kind === 'list' && view.accountId === l.accountId && view.listId === l.id;
               return (
-                <button
+                <div
                   key={listKey(l)}
-                  type="button"
-                  onClick={() => setView({ kind: 'list', accountId: l.accountId, listId: l.id })}
-                  className={cn(
-                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-hover',
-                    active && 'bg-primary-soft text-primary hover:bg-primary-soft',
-                  )}
+                  className={cn('group flex items-center rounded-md hover:bg-hover', active && 'bg-primary-soft text-primary hover:bg-primary-soft')}
                 >
-                  <ListTodo className="h-4 w-4 shrink-0" style={l.color ? { color: l.color } : undefined} />
-                  <span className="min-w-0 flex-1 truncate">{l.name}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setView({ kind: 'list', accountId: l.accountId, listId: l.id })}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm"
+                  >
+                    <ListTodo className="h-4 w-4 shrink-0" style={l.color ? { color: l.color } : undefined} />
+                    <span className="min-w-0 flex-1 truncate">{l.name}</span>
+                  </button>
+                  {l.manageable && (
+                    <Dropdown
+                      align="right"
+                      className={cn('mr-1', !isMobile && 'opacity-0 group-hover:opacity-100 focus-within:opacity-100')}
+                      trigger={
+                        <button type="button" aria-label="Listenaktionen" className="rounded p-0.5 text-muted hover:text-fg">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                      }
+                      items={[
+                        { label: 'Umbenennen', icon: <Pencil />, onClick: () => setListDialog({ list: l }) },
+                        { label: 'Löschen', icon: <Trash2 />, danger: true, onClick: () => void removeList(l) },
+                      ]}
+                    />
+                  )}
+                </div>
               );
             })}
           </div>
@@ -295,6 +343,7 @@ export default function TasksPage() {
                       task={t}
                       active={selected === taskKey(t)}
                       account={view?.kind === 'due' ? accountMap.get(t.accountId) : undefined}
+                      sourceName={view?.kind === 'due' ? lists.find((l) => l.accountId === t.accountId)?.sourceName : undefined}
                       listName={view?.kind === 'due' ? lists.find((l) => l.accountId === t.accountId && l.id === t.listId)?.name : undefined}
                       onToggle={() => void toggle(t)}
                       onImportant={() => void toggleImportant(t)}
@@ -313,6 +362,8 @@ export default function TasksPage() {
       </SidebarSheet>
 
       {current && <TaskDrawer key={taskKey(current)} task={current} onClose={() => setSelected(null)} onChanged={() => invalidateList(current.accountId, current.listId)} />}
+      {listDialog && <ListNameDialog list={listDialog.list} onClose={() => setListDialog(null)} onSave={saveList} />}
+      {confirmDialog}
     </div>
   );
 }
@@ -321,6 +372,7 @@ function TaskRow({
   task: t,
   active,
   account,
+  sourceName,
   listName,
   onToggle,
   onImportant,
@@ -329,6 +381,7 @@ function TaskRow({
   task: Task;
   active: boolean;
   account?: AccountInfo;
+  sourceName?: string;
   listName?: string;
   onToggle: () => void;
   onImportant: () => void;
@@ -371,10 +424,16 @@ function TaskRow({
               {due.label}
             </span>
           )}
-          {account && (
+          {(account || sourceName) && (
             <span className="inline-flex items-center gap-1">
-              <ColorDot color={account.color} className="h-2 w-2" />
-              {listName ?? account.name}
+              <ColorDot color={account?.color} className="h-2 w-2" />
+              {listName ?? account?.name ?? sourceName}
+            </span>
+          )}
+          {t.mailRef && (
+            <span className="inline-flex min-w-0 max-w-xs items-center gap-1" title={`Aus E-Mail: ${t.mailRef.subject ?? ''}`}>
+              <Mail className="h-3 w-3 shrink-0" />
+              <span className="truncate">{t.mailRef.from ?? t.mailRef.subject ?? 'E-Mail'}</span>
             </span>
           )}
           {t.notes && <span className="min-w-0 max-w-md truncate">{t.notes.replace(/\s+/g, ' ')}</span>}
@@ -396,6 +455,7 @@ function TaskRow({
 }
 
 function TaskDrawer({ task, onClose, onChanged }: { task: Task; onClose: () => void; onChanged: () => void }) {
+  const navigate = useNavigate();
   const { confirm, dialog } = useConfirm();
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes ?? '');
@@ -477,6 +537,23 @@ function TaskDrawer({ task, onClose, onChanged }: { task: Task; onClose: () => v
         <Field label="Notizen">
           <Textarea rows={8} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
+        {task.mailRef && (
+          <button
+            type="button"
+            className="flex w-full items-start gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-left text-sm hover:border-primary/40"
+            onClick={() => {
+              const r = task.mailRef!;
+              navigate(messageUrl({ accountId: r.accountId, folderId: r.folderId, id: r.messageId }));
+            }}
+            title="E-Mail öffnen"
+          >
+            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{task.mailRef.subject || 'E-Mail'}</span>
+              {task.mailRef.from && <span className="block truncate text-xs text-muted">von {task.mailRef.from}</span>}
+            </span>
+          </button>
+        )}
         {task.completedAt && <div className="text-xs text-muted">Erledigt am {new Date(task.completedAt).toLocaleString('de-DE')}</div>}
         {task.updatedAt && <div className="text-xs text-muted">Zuletzt geändert {new Date(task.updatedAt).toLocaleString('de-DE')}</div>}
         <button type="submit" className="hidden" />
@@ -494,5 +571,48 @@ function TaskDrawer({ task, onClose, onChanged }: { task: Task; onClose: () => v
       </div>
       {dialog}
     </aside>
+  );
+}
+
+function ListNameDialog({ list, onClose, onSave }: { list?: TaskList; onClose: () => void; onSave: (name: string) => Promise<void> }) {
+  const [name, setName] = useState(list?.name ?? '');
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    const n = name.trim();
+    if (!n) return;
+    setSaving(true);
+    try {
+      await onSave(n);
+      onClose();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal
+      open
+      size="sm"
+      onClose={onClose}
+      title={list ? 'Liste umbenennen' : 'Neue Aufgabenliste'}
+      footer={
+        <>
+          <Button onClick={onClose}>Abbrechen</Button>
+          <Button variant="primary" loading={saving} disabled={!name.trim()} onClick={save}>
+            {list ? 'Speichern' : 'Anlegen'}
+          </Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <Input autoFocus placeholder="Name der Liste" value={name} maxLength={200} onChange={(e) => setName(e.target.value)} />
+      </form>
+    </Modal>
   );
 }

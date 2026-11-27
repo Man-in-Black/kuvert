@@ -136,7 +136,10 @@ export function LocationInput({ value, onChange, placeholder }: { value: string;
               );
             })
           )}
-          <div className="border-t border-border px-3 pt-1 text-right text-[10px] text-muted">Vorschläge von Google</div>
+          {/* Attribution laut Google-Maps-Platform-Richtlinie: „Google Maps“, unübersetzt */}
+          <div className="border-t border-border px-3 pt-1 text-right text-xs text-muted" translate="no" style={{ fontFamily: 'Roboto, Arial, sans-serif' }}>
+            Google Maps
+          </div>
         </div>
       )}
     </div>

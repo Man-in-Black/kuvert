@@ -99,3 +99,40 @@ export function sortTasks(tasks: Task[]): Task[] {
     return a.title.localeCompare(b.title, 'de');
   });
 }
+
+/* ───────────── Kuvert-eigene Listen ───────────── */
+
+/** Pseudo-Konto-ID der Kuvert-eigenen Aufgaben */
+export const LOCAL_SOURCE_ID = 'kuvert';
+
+export function createLocalList(name: string) {
+  return api<TaskList>('/localtasks/lists', { method: 'POST', body: { name } });
+}
+
+export function renameLocalList(id: string, name: string) {
+  return api<TaskList>(`/localtasks/lists/${encodeURIComponent(id)}`, { method: 'PATCH', body: { name } });
+}
+
+export function deleteLocalList(id: string) {
+  return api(`/localtasks/lists/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/* ───────────── Zuletzt gewählte Liste (Aufgabe aus Mail) ───────────── */
+
+const LAST_LIST_KEY = 'kuvert.tasks.lastList';
+
+export function lastUsedList(): string | null {
+  try {
+    return localStorage.getItem(LAST_LIST_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function rememberList(l: { accountId: string; id: string }) {
+  try {
+    localStorage.setItem(LAST_LIST_KEY, listKey(l));
+  } catch {
+    /* egal */
+  }
+}

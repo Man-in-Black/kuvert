@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { CalendarDays } from 'lucide-react';
 import type { WebModule } from '@/modules/types';
 import { Spinner } from '@/components/ui';
+import { MailEventAction } from './MailEventAction';
 
 const CalendarPage = lazy(() => import('./CalendarPage'));
 /** Panel der Seitenleiste rechts (erst beim Aufklappen geladen) */
@@ -36,6 +37,7 @@ const mod: WebModule = {
       keywords: 'kalender termine agenda heute',
     },
   ],
+  messageActions: [MailEventAction],
 };
 
 export default mod;

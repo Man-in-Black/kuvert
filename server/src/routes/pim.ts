@@ -79,6 +79,16 @@ const taskInput = z.object({
   due: z.string().nullable().optional(),
   completed: z.boolean().optional(),
   importance: z.enum(['low', 'normal', 'high']).optional(),
+  mailRef: z
+    .object({
+      accountId: z.string().min(1).max(200),
+      folderId: z.string().min(1).max(2000),
+      messageId: z.string().min(1).max(2000),
+      subject: z.string().max(1000).optional(),
+      from: z.string().max(500).optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export async function pimRoutes(app: FastifyInstance, ctx: ModuleContext) {
@@ -317,32 +327,49 @@ export async function pimRoutes(app: FastifyInstance, ctx: ModuleContext) {
 
   /* ═════════════════════════════ Aufgaben ═════════════════════════════ */
 
+  const taskSourcesFor = (userId: string) => ctx.hooks.taskSources.filter((s) => s.available(userId));
+  /** Aufgaben-Provider eines Kontos oder einer Aufgabenquelle (z. B. Kuvert-eigene Aufgaben) */
+  const tasksFor = (userId: string, accountId: string) => {
+    const src = taskSourcesFor(userId).find((s) => s.id === accountId);
+    return src ? src.provider(userId) : accounts.require(userId, accountId, 'tasks');
+  };
+
   app.get('/api/tasks/lists', async (req) => {
     const accs = accounts.withCapability(req.user.id, 'tasks');
-    const { results, errors } = await settleByAccount(accs, (a) => accounts.providersFor(a as AccountRecord).tasks!.listTaskLists());
-    const lists: TaskList[] = results.flatMap((r) => r.value.map((l) => ({ ...l, accountId: r.accountId })));
-    return { lists, errors };
+    const sources = taskSourcesFor(req.user.id);
+    const [fromAccounts, fromSources] = await Promise.all([
+      settleByAccount(accs, (a) => accounts.providersFor(a as AccountRecord).tasks!.listTaskLists()),
+      settleByAccount(sources, (s) => s.provider(req.user.id).listTaskLists()),
+    ]);
+    const lists: TaskList[] = [
+      ...fromSources.results.flatMap((r) => {
+        const s = sources.find((x) => x.id === r.accountId)!;
+        return r.value.map((l) => ({ ...l, accountId: s.id, sourceName: s.name, sourceColor: s.color, manageable: s.manageable }));
+      }),
+      ...fromAccounts.results.flatMap((r) => r.value.map((l) => ({ ...l, accountId: r.accountId }))),
+    ];
+    return { lists, errors: [...fromSources.errors, ...fromAccounts.errors] };
   });
 
   app.get<{ Querystring: { accountId: string; listId: string; showCompleted?: string } }>('/api/tasks', async (req) => {
-    const tasks: Task[] = await accounts
-      .require(req.user.id, req.query.accountId, 'tasks')
-      .listTasks(req.query.listId, { showCompleted: req.query.showCompleted === 'true' });
+    const tasks: Task[] = await tasksFor(req.user.id, req.query.accountId).listTasks(req.query.listId, {
+      showCompleted: req.query.showCompleted === 'true',
+    });
     return tasks;
   });
 
   app.post<AccParams>('/api/tasks/accounts/:accountId', async (req) => {
     const body = parse(z.object({ listId: z.string(), task: taskInput }), req.body);
-    return accounts.require(req.user.id, req.params.accountId, 'tasks').createTask(body.listId, body.task);
+    return tasksFor(req.user.id, req.params.accountId).createTask(body.listId, body.task);
   });
 
   app.patch<AccParams>('/api/tasks/accounts/:accountId', async (req) => {
     const body = parse(z.object({ listId: z.string(), taskId: z.string(), task: taskInput }), req.body);
-    return accounts.require(req.user.id, req.params.accountId, 'tasks').updateTask(body.listId, body.taskId, body.task);
+    return tasksFor(req.user.id, req.params.accountId).updateTask(body.listId, body.taskId, body.task);
   });
 
   app.delete<AccParams & { Querystring: { listId: string; taskId: string } }>('/api/tasks/accounts/:accountId', async (req) => {
-    await accounts.require(req.user.id, req.params.accountId, 'tasks').deleteTask(req.query.listId, req.query.taskId);
+    await tasksFor(req.user.id, req.params.accountId).deleteTask(req.query.listId, req.query.taskId);
     return { ok: true };
   });
 

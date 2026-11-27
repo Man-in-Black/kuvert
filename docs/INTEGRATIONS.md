@@ -1,4 +1,4 @@
-# Integrationen: mailcow, Mail-Archiver, 3CX, Mattermost, Nextcloud Talk & Teams
+# Integrationen: mailcow, Mail-Archiver, Paperless-ngx, 3CX, Mattermost, Nextcloud Talk & Teams
 
 ## mailcow
 
@@ -86,6 +86,31 @@ Deep-Link für Suchen: `/archive?q=Rechnung&from=2026-01-01`
 - Die Schlüssel werden verschlüsselt gespeichert und nie an den Browser zurückgegeben.
 - Überschreitet ein Benutzer das Anfragelimit des Archivs (HTTP 429), zeigt Kuvert einen Hinweis.
 - Die Archiv-API ist rein lesend; Kuvert verändert keine archivierten Daten.
+
+## Paperless-ngx
+
+Anbindung an [Paperless-ngx](https://docs.paperless-ngx.com) über dessen REST-API:
+
+| Wo | Funktion |
+|---|---|
+| **Editor** (*Anhängen → Aus Paperless …*) | Dokumente per Volltext sowie nach Korrespondent, Dokumenttyp und Tag suchen (mit Vorschaubild und Trefferausschnitt, Vorschau als PDF im neuen Tab); **anhängen** als durchsuchbares Archiv-PDF oder im Original, oder einen **Freigabelink** (7/30/90 Tage oder unbegrenzt) einfügen |
+| **Nachrichtenansicht** (Blatt-Symbol am Anhang) | Anhang **an Paperless übergeben** – Titel, Korrespondent, Dokumenttyp und Tags optional; ohne Angaben ordnet Paperless über seine Zuordnungsregeln selbst zu. Kuvert verfolgt die Verarbeitung und meldet Erfolg (mit „Öffnen“) oder den Grund des Scheiterns, z. B. ein Duplikat |
+| **Einstellungen → Paperless** | Eigener API-Token, Übersicht (Dokumente, Posteingang, Tags) |
+
+### Einrichtung
+
+1. In Kuvert: **Admin → Paperless** – Standard-Adresse der Paperless-Oberfläche eintragen
+   (z. B. `https://paperless.example.com`, ohne `/api`) und „Paperless anbieten“ aktivieren.
+   Alternativ `PAPERLESS_URL=…` setzen (aktiviert die Anbindung).
+2. Jeder Benutzer erzeugt in Paperless unter **Mein Profil → API-Auth-Token** einen Token und hinterlegt ihn
+   unter **Einstellungen → Paperless** (oder direkt im Auswahldialog des Editors). So gelten die Berechtigungen
+   aus Paperless – jeder sieht nur die Dokumente, die er dort sehen darf.
+
+### Hinweise
+
+- Die Tokens werden verschlüsselt gespeichert und nie an den Browser zurückgegeben.
+- Freigabelinks zeigen auf die eigene Paperless-Instanz (`/share/…`) – sie muss für die Empfänger erreichbar sein.
+- Übergaben an Paperless und erzeugte Freigabelinks landen im Audit-Log.
 
 ## 3CX (Click-to-Call, eingehende Anrufe)
 

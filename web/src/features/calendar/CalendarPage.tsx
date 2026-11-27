@@ -155,6 +155,7 @@ export default function CalendarPage() {
           ev.status === 'cancelled' ? 'is-cancelled' : '',
           ev.showAs === 'tentative' || ev.myResponse === 'tentative' ? 'is-tentative' : '',
           ev.showAs === 'free' ? 'is-free' : '',
+          ev.showAs === 'oof' ? 'is-oof' : '',
           ev.myResponse === 'needsAction' && !ev.isOrganizer ? 'is-pending' : '',
           isRecurring(ev) ? (ev.isException ? 'is-recurring is-exception' : 'is-recurring') : '',
         ].filter(Boolean),

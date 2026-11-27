@@ -22,6 +22,8 @@ export interface EditorInit {
   calendarKey?: string;
   /** „Dieser und alle folgenden“: event ist der Entwurf des neuen Serienteils */
   split?: SplitContext;
+  /** Vorbelegung für einen neuen Termin (z. B. aus einer E-Mail) */
+  draft?: { title?: string; description?: string; location?: string; attendees?: EmailAddress[] };
 }
 
 interface FormState {
@@ -64,16 +66,16 @@ function initialState(init: EditorInit, defaultKey: string): FormState {
     end = addHours(start, 1);
   }
   return {
-    title: ev?.title ?? '',
+    title: ev?.title ?? init.draft?.title ?? '',
     calendarKey: ev ? calKey({ accountId: ev.accountId, calendarId: ev.calendarId }) : (init.calendarKey ?? defaultKey),
     allDay,
     startDate: toDateInput(start),
     startTime: toTimeInput(start),
     endDate: toDateInput(end),
     endTime: toTimeInput(end),
-    location: ev?.location ?? '',
-    description: ev ? eventDescription(ev) : '',
-    attendees: (ev?.attendees ?? []).map((a) => ({ name: a.name, address: a.address })),
+    location: ev?.location ?? init.draft?.location ?? '',
+    description: ev ? eventDescription(ev) : (init.draft?.description ?? ''),
+    attendees: ev ? (ev.attendees ?? []).map((a) => ({ name: a.name, address: a.address })) : (init.draft?.attendees ?? []),
     reminder: ev?.reminderMinutes === null || ev?.reminderMinutes === undefined ? (ev ? '' : '15') : String(ev.reminderMinutes),
     recurrence: parseRRule(ev?.recurrence),
     showAs: ev?.showAs ?? 'busy',

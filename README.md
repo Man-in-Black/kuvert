@@ -4,7 +4,7 @@
 für Microsoft 365, Google Workspace/Gmail, IMAP/SMTP, CalDAV/CardDAV und Nextcloud.
 Mit gemeinsamem Posteingang, überlagerten Kalendern, S/MIME, Teams/Meet-Meetings,
 lokalem KI-Assistenten (Ollama), Push-Benachrichtigungen, Mehrbenutzer- und Admin-Bereich,
-Zwei-Faktor-Anmeldung, REST-API mit Webhooks, Team-Chat mit Audio-/Videoanrufen sowie mailcow-, Mail-Archiver- und 3CX-Anbindung.
+Zwei-Faktor-Anmeldung, REST-API mit Webhooks, Team-Chat mit Audio-/Videoanrufen sowie mailcow-, Mail-Archiver-, Paperless-ngx- und 3CX-Anbindung.
 Läuft als ein Docker-Container.
 
 ---
@@ -20,6 +20,7 @@ Läuft als ein Docker-Container.
 | **Nextcloud / WebDAV** | Kalender, Kontakte, Aufgaben und Dateien inkl. Freigabelinks |
 | **Mehrere Konten** | Gemeinsamer Posteingang (kontoübergreifend sortiert), Suche im Ordner, im ganzen Konto (alle Unterordner) oder kontoübergreifend, Farben pro Konto |
 | **Konversationsansicht** | Nachrichten nach Unterhaltung gruppiert (Thread-ID von Microsoft/Gmail, bei IMAP über Message-ID/In-Reply-To und Betreff), Leseansicht mit allen Nachrichten des Threads – *Einstellungen → Allgemein*; Doppelklick öffnet eine Nachricht oder Unterhaltung (auch eine einzelne Nachricht einer aufgeklappten Unterhaltung) in einem **eigenen Fenster** |
+| **Aufgaben** | Microsoft To Do, Google Tasks, CalDAV (VTODO) und **Kuvert-eigene Aufgabenlisten** (in der Kuvert-Datenbank, auch ohne passendes Konto; Listen anlegen, umbenennen, löschen) in einer Ansicht, „Fällig & überfällig“ über alle Listen; aus jeder Mail per Klick eine **Aufgabe** (mit Verweis zurück auf die Mail) oder einen **Termin** anlegen – auf Wunsch als Besprechung mit Absender oder allen Beteiligten |
 | **Kalender** | Überlagert *oder* nebeneinander (getrennte Spalten), Drag & Drop, Serien, Teilnehmer, Zu-/Absagen, Online-Meeting per Klick; zusätzlich als **Kalender-Leiste** rechts (Agenda der nächsten 7 Tage), anpinnbar neben Mail & Co. |
 | **Editor** | TipTap-WYSIWYG: Schriftarten, Farben, Tabellen, Bilder (inline/cid), Links, Vorlagen, Nur-Text-Modus |
 | **Signaturen** | **HTML** (im Editor bearbeitbar) und **RAW** (Quelltext wird byte-genau angehängt) – pro Konto/Absender, Standard für Neu/Antwort |
@@ -35,6 +36,7 @@ Läuft als ein Docker-Container.
 | **Team-Chat** | Direktnachrichten und Gruppen zwischen Kuvert-Benutzern in Echtzeit (SSE): WYSIWYG-Eingabe mit Markdown-Kürzeln, @-Erwähnungen (Personen, @all), Dateien & Bilder, Antworten, Reaktionen, Bearbeiten/Löschen, Lesebestätigungen, „schreibt …“, Online-Status, Suche, Stummschalten/Anheften, Web Push, Webhook `chat.message`; zusätzlich **Mattermost, Nextcloud Talk und Microsoft Teams** in derselben Oberfläche |
 | **Anrufe** | Audio- und Videoanrufe im Team-Chat (direkt und in Gruppen) über einen selbst gehosteten LiveKit-Server: **Bildschirmfreigabe**, gemeinsames **Whiteboard** (Excalidraw, als Bild in den Chat stellbar), Klingeln mit Annehmen/Ablehnen, Web Push, verpasste Anrufe mit „Zurückrufen“, Anruf-Karte mit Dauer im Verlauf, verkleinerbares Anruf-Fenster, Hintergrund weichzeichnen oder ersetzen, für alle beenden; weitere Personen dazuholen, **Gäste ohne Konto** per Link mit Wartebereich, **Meeting-Links im Kalender** |
 | **Mail-Archiver** | Archiv durchsuchen (Volltext, Zeitraum, Konto, Ordner), Mails lesen, Anhänge/.eml laden, aus dem Archiv weiterleiten oder antworten – per persönlichem API-Schlüssel |
+| **Paperless-ngx** | Im Editor Dokumente per Volltext, Korrespondent, Typ und Tag suchen und **anhängen** (Archiv-PDF oder Original) oder als **Freigabelink** mit Ablaufdatum einfügen; Mail-Anhänge per Klick **an Paperless übergeben** (Titel, Korrespondent, Dokumenttyp, Tags optional) – per persönlichem API-Token |
 | **3CX** | Click-to-Call über die eigene Nebenstelle (3CX V20): Klick auf eine Telefonnummer startet den Anruf; eingehende Anrufe in Echtzeit mit Namen aus den Kontakten, verpasste mit „Zurückrufen“; Bereich **Telefon** mit Wahlfeld, laufendem Gespräch (Auflegen), eigenem Status, Anrufliste, 3CX-Telefonbuch und Kollegen mit Status; Zuordnung der Nebenstellen durch den Admin – auch automatisch per E-Mail-Adresse |
 | **Zeiterfassung** | Timer mit Start/Stopp – auch mehrere gleichzeitig, laufende Timer links im Menü sichtbar (links als Bereich **Zeiterfassung**, rechts als Panel in der Seitenleiste), Aufrunden auf 15 Minuten (einstellbar), Projektsuche auch nach Kunden, Zeiten nachtragen und bearbeiten (Dauer direkt, ±15 min, Zeitleiste), Wochen-/Monats-/Jahresansicht mit Tagessummen, gemeinsame Kunden → Projekte → Tätigkeiten mit Stundensätzen, Schlagworte, Auswertung mit Beträgen und CSV-Export; **Import aus Kimai 2** (API-Token oder API-Passwort, wiederholbar ohne Dubletten) |
 | **Oberfläche** | Modernes, responsives Design (Desktop, Tablet, Smartphone mit eigener Mobil-Navigation), Hell/Dunkel/System, Befehlspalette (Strg/⌘+K), einklappbare Seitenleiste, installierbar als PWA oder als [Desktop-App](#desktop-app) |
@@ -294,7 +296,7 @@ curl -H "Authorization: Bearer kvt_…" "https://kuvert.example.com/api/mail/uni
 - **Webhooks** senden Ereignisse (`mail.new`, `calendar.reminder`, `send.status` …) als JSON-POST.
   Prüfung der Echtheit: `X-Kuvert-Signature: sha256=<HMAC-SHA256(secret, body)>`.
 
-## mailcow & Mail-Archiver
+## mailcow, Mail-Archiver & Paperless
 
 Details zur Einrichtung: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
@@ -302,6 +304,8 @@ Details zur Einrichtung: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
   (in mailcow: *Konfiguration → Zugang → API*, Kuvert-IP freischalten).
 - **Mail-Archiver:** API im Archiver aktivieren (`Api__Enabled=true`), Basis-URL im Admin-Bereich setzen,
   jeder Benutzer hinterlegt seinen persönlichen API-Schlüssel unter *Einstellungen → Mail-Archiv*.
+- **Paperless-ngx:** Basis-URL unter *Admin → Paperless* setzen (oder `PAPERLESS_URL`), jeder Benutzer hinterlegt
+  seinen API-Token aus Paperless (*Mein Profil → API-Auth-Token*) unter *Einstellungen → Paperless*.
 
 ## Team-Chat
 

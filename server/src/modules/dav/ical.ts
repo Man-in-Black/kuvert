@@ -144,6 +144,7 @@ function mapEvent(
   const me = attendees.find((a) => own.includes(a.address.toLowerCase()));
   const status = String(vevent.getFirstPropertyValue('status') ?? '').toUpperCase();
   const transp = String(vevent.getFirstPropertyValue('transp') ?? '').toUpperCase();
+  const busyStatus = String(vevent.getFirstPropertyValue('x-microsoft-cdo-busystatus') ?? '').toUpperCase();
   const rrule = vevent.getFirstPropertyValue('rrule') as unknown;
   const description = str(vevent.getFirstPropertyValue('description'));
   const url = str(vevent.getFirstPropertyValue('url'));
@@ -170,7 +171,16 @@ function mapEvent(
     organizer: organizerAddr ? { address: organizerAddr, name: typeof organizerCn === 'string' ? organizerCn : undefined } : undefined,
     onlineMeetingUrl: meetingUrl,
     status: status === 'CANCELLED' ? 'cancelled' : status === 'TENTATIVE' ? 'tentative' : 'confirmed',
-    showAs: transp === 'TRANSPARENT' ? 'free' : status === 'TENTATIVE' ? 'tentative' : 'busy',
+    showAs:
+      transp === 'TRANSPARENT'
+        ? 'free'
+        : busyStatus === 'OOF'
+          ? 'oof'
+          : busyStatus === 'WORKINGELSEWHERE'
+            ? 'workingElsewhere'
+            : status === 'TENTATIVE' || busyStatus === 'TENTATIVE'
+              ? 'tentative'
+              : 'busy',
     reminderMinutes: reminderOf(vevent),
     myResponse: me?.status,
     isOrganizer: !organizerAddr || own.includes(organizerAddr.toLowerCase()),
@@ -400,6 +410,11 @@ function applyEventInput(vevent: Component, input: Partial<EventInput>, opts: { 
   if (input.showAs !== undefined) {
     vevent.updatePropertyWithValue('transp', input.showAs === 'free' ? 'TRANSPARENT' : 'OPAQUE');
     if (input.showAs === 'tentative') vevent.updatePropertyWithValue('status', 'TENTATIVE');
+    else if (String(vevent.getFirstPropertyValue('status') ?? '').toUpperCase() === 'TENTATIVE') vevent.updatePropertyWithValue('status', 'CONFIRMED');
+    // Abwesend & Co. hat iCalendar nicht – Outlook/Thunderbird lesen dafür X-MICROSOFT-CDO-BUSYSTATUS
+    const cdo = { oof: 'OOF', workingElsewhere: 'WORKINGELSEWHERE' }[input.showAs as string];
+    if (cdo) vevent.updatePropertyWithValue('x-microsoft-cdo-busystatus', cdo);
+    else vevent.removeAllProperties('x-microsoft-cdo-busystatus');
   }
 
   const now = ICAL.Time.fromJSDate(new Date(), true);

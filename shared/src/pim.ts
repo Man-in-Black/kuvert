@@ -164,6 +164,20 @@ export interface TaskList {
   name: string;
   isDefault?: boolean;
   color?: string;
+  /** Name und Farbe der Quelle, wenn sie kein Mailkonto ist (z. B. Kuvert-eigene Aufgaben) */
+  sourceName?: string;
+  sourceColor?: string;
+  /** Listen dieser Quelle lassen sich in Kuvert anlegen, umbenennen und löschen */
+  manageable?: boolean;
+}
+
+/** Verweis einer Aufgabe auf die E-Mail, aus der sie entstanden ist */
+export interface TaskMailRef {
+  accountId: string;
+  folderId: string;
+  messageId: string;
+  subject?: string;
+  from?: string;
 }
 
 export interface Task {
@@ -181,6 +195,8 @@ export interface Task {
   updatedAt?: string;
   parentId?: string | null;
   etag?: string;
+  /** Nur bei Kuvert-eigenen Aufgaben: Ursprungs-Mail */
+  mailRef?: TaskMailRef | null;
 }
 
 export interface TaskInput {
@@ -189,6 +205,8 @@ export interface TaskInput {
   due?: string | null;
   completed?: boolean;
   importance?: 'low' | 'normal' | 'high';
+  /** Wird nur von Kuvert-eigenen Aufgaben gespeichert, andere Anbieter ignorieren es */
+  mailRef?: TaskMailRef | null;
 }
 
 /* ───────────────────────────── Speicher ───────────────────────────── */

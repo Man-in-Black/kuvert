@@ -6,7 +6,13 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type { AppInfo, AccountInfo, TtEntry, TtLink } from '@kuvert/shared';
-import type { ComposerExtensionProps, ConversationExtensionProps, MessageExtensionProps } from '@/features/mail/extension-types';
+import type {
+  AttachmentExtensionProps,
+  ComposerAttachSource,
+  ComposerExtensionProps,
+  ConversationExtensionProps,
+  MessageExtensionProps,
+} from '@/features/mail/extension-types';
 
 export interface NavItem {
   /** Pfad ohne führenden Slash, z. B. "mail" */
@@ -116,6 +122,10 @@ export interface WebModule {
   composerToolbar?: ComponentType<ComposerExtensionProps>[];
   /** Zusätzliche Optionen im Verfassen-Dialog (z. B. S/MIME-Schalter) */
   composerOptions?: ComponentType<ComposerExtensionProps>[];
+  /** Weitere Quellen im Menü „Anhängen“ des Editors (z. B. Paperless) */
+  composerAttachSources?: ComposerAttachSource[];
+  /** Knöpfe an Mail-Anhängen in der Nachrichtenansicht (z. B. „An Paperless senden“) */
+  attachmentActions?: ComponentType<AttachmentExtensionProps>[];
   /** Aktionen in der Nachrichtenansicht (z. B. "Zusammenfassen") */
   messageActions?: ComponentType<MessageExtensionProps>[];
   /** Hinweise/Banner über dem Nachrichteninhalt (z. B. S/MIME-Status) */

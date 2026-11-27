@@ -96,6 +96,11 @@
   background-image: repeating-linear-gradient(45deg, transparent 0 5px, rgb(255 255 255 / 0.22) 5px 10px);
 }
 
+/* Abwesend: dichter und dunkler schraffiert als „Mit Vorbehalt“ und in Gegenrichtung */
+.kuvert-cal .fc-event.is-oof {
+  background-image: repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 0.28) 4px 8px);
+}
+
 .kuvert-cal .fc-event.is-free {
   opacity: 0.65;
 }

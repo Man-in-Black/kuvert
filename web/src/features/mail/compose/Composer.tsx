@@ -84,6 +84,7 @@ export function Composer({ entry, variant = 'floating' }: { entry: ComposerEntry
   const smimeEnabled = useFeature('smime');
   const toolbarExt = useExtensions('composerToolbar');
   const optionExt = useExtensions('composerOptions');
+  const attachSources = useExtensions('composerAttachSources');
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   /* ───────────── Zustand ───────────── */
@@ -119,6 +120,7 @@ export function Composer({ entry, variant = 'floating' }: { entry: ComposerEntry
   const [maximized, setMaximized] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [cloudMode, setCloudMode] = useState<'attach' | 'link' | null>(null);
+  const [attachSource, setAttachSource] = useState<string | null>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [preview, setPreview] = useState<PreviewFile | null>(null);
@@ -349,30 +351,45 @@ export function Composer({ entry, variant = 'floating' }: { entry: ComposerEntry
     addFiles(files);
   };
 
+  /** Datei aus einer externen Quelle (Cloud, Paperless …) anhängen: sofort mit Fortschritt anzeigen, dann laden */
+  const attachExternal = async (file: { filename: string; contentType?: string; size?: number }, load: () => Promise<UploadInfo>) => {
+    const key = akey();
+    setAttachments((prev) => [...prev, { key, filename: file.filename, size: file.size, contentType: file.contentType, progress: 0 }]);
+    touch();
+    try {
+      const u = await load();
+      setAttachments((prev) =>
+        prev.map((a) => (a.key === key ? { ...a, filename: u.filename || a.filename, uploadId: u.id, contentType: u.contentType, size: u.size, progress: undefined } : a)),
+      );
+    } catch (err) {
+      setAttachments((prev) => prev.map((a) => (a.key === key ? { ...a, progress: undefined, error: errorMessage(err) } : a)));
+    }
+  };
+
+  /** Link auf eine Datei an der Cursorposition einfügen */
+  const insertFileLink = (name: string, url: string, size?: number) => {
+    const htmlLink = `<p>📎 <a href="${escapeHtml(url)}">${escapeHtml(name)}</a>${size ? ` (${formatSize(size)})` : ''}</p>`;
+    if (plainText) setText((t) => `${t}\n${name}: ${url}\n`);
+    else if (editor && !editor.isDestroyed) editor.chain().focus().insertContent(htmlLink).run();
+    touch();
+  };
+
   const onCloudPick = async (picked: StoragePickResult[]) => {
     const mode = cloudMode;
     setCloudMode(null);
     for (const p of picked) {
       if (mode === 'attach') {
-        const key = akey();
-        setAttachments((prev) => [...prev, { key, filename: p.item.name, size: p.item.size, contentType: p.item.contentType, progress: 0 }]);
-        try {
-          const u = await api<UploadInfo>(`/storage/accounts/${p.accountId}/attach`, { method: 'POST', body: { itemId: p.item.id } });
-          setAttachments((prev) => prev.map((a) => (a.key === key ? { ...a, uploadId: u.id, contentType: u.contentType, size: u.size, progress: undefined } : a)));
-        } catch (err) {
-          setAttachments((prev) => prev.map((a) => (a.key === key ? { ...a, progress: undefined, error: errorMessage(err) } : a)));
-        }
+        await attachExternal({ filename: p.item.name, size: p.item.size, contentType: p.item.contentType }, () =>
+          api<UploadInfo>(`/storage/accounts/${p.accountId}/attach`, { method: 'POST', body: { itemId: p.item.id } }),
+        );
       } else {
         try {
           const link = await api<ShareLink>(`/storage/accounts/${p.accountId}/share`, { method: 'POST', body: { itemId: p.item.id } });
-          const htmlLink = `<p>📎 <a href="${escapeHtml(link.url)}">${escapeHtml(p.item.name)}</a>${p.item.size ? ` (${formatSize(p.item.size)})` : ''}</p>`;
-          if (plainText) setText((t) => `${t}\n${p.item.name}: ${link.url}\n`);
-          else if (editor && !editor.isDestroyed) editor.chain().focus().insertContent(htmlLink).run();
+          insertFileLink(p.item.name, link.url, p.item.size);
         } catch (err) {
           toast.error(`Freigabelink fehlgeschlagen: ${errorMessage(err)}`);
         }
       }
-      touch();
     }
   };
 
@@ -973,6 +990,7 @@ export function Composer({ entry, variant = 'floating' }: { entry: ComposerEntry
             { label: 'Datei hochladen …', icon: <Upload />, onClick: () => fileInput.current?.click() },
             { label: 'Aus Cloud anhängen …', icon: <Cloud />, onClick: () => setCloudMode('attach') },
             { label: 'Cloud-Link einfügen …', icon: <Link2 />, onClick: () => setCloudMode('link') },
+            ...attachSources.map((src) => ({ label: src.label, icon: src.icon, onClick: () => setAttachSource(src.id) })),
           ]}
         />
 
@@ -1059,6 +1077,15 @@ export function Composer({ entry, variant = 'floating' }: { entry: ComposerEntry
         title={cloudMode === 'link' ? 'Cloud-Link einfügen' : 'Aus Cloud anhängen'}
         onPick={(p) => void onCloudPick(p)}
       />
+      {attachSources.map(({ id, dialog: Dialog }) => (
+        <Dialog
+          key={id}
+          open={attachSource === id}
+          onClose={() => setAttachSource(null)}
+          attach={(file, load) => void attachExternal(file, load)}
+          insertLink={insertFileLink}
+        />
+      ))}
       <ScheduleDialog
         open={scheduleOpen}
         onClose={() => setScheduleOpen(false)}

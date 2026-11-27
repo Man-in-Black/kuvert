@@ -1,5 +1,5 @@
 import type { AddressSuggestion, Contact, MessageDetail, MessageSummary, OutgoingMessage } from '@kuvert/shared';
-import type { BinaryContent, MailProvider } from './providers.js';
+import type { BinaryContent, MailProvider, TasksProvider } from './providers.js';
 
 export interface MessageViewContext {
   userId: string;
@@ -81,6 +81,24 @@ export interface ContactSource {
   suggest?(userId: string, query: string, limit: number): Promise<AddressSuggestion[]>;
 }
 
+/**
+ * Zusätzliche Aufgabenquelle ohne Mailkonto (z. B. Kuvert-eigene Aufgaben).
+ * Erscheint mit ihren Listen unter der Pseudo-Konto-ID `id` auf der Aufgabenseite.
+ */
+export interface TaskSource {
+  /** Pseudo-Konto-ID; darf mit keiner echten Konto-ID kollidieren */
+  id: string;
+  /** Name der Quelle (Gruppenüberschrift) */
+  name: string;
+  color?: string;
+  /** Listen lassen sich in Kuvert anlegen/umbenennen/löschen */
+  manageable?: boolean;
+  /** Für diesen Benutzer verfügbar? Sonst taucht die Quelle nicht auf. */
+  available(userId: string): boolean;
+  /** Aufgaben-Provider für diesen Benutzer */
+  provider(userId: string): TasksProvider;
+}
+
 /** Zentrale Hook-Sammlung – Module registrieren sich in `init()`. */
 export class Hooks {
   readonly messageView: MessageViewHook[] = [];
@@ -90,6 +108,7 @@ export class Hooks {
   readonly messageList: MessageListHook[] = [];
   readonly attachmentResolvers: AttachmentResolver[] = [];
   readonly contactSources: ContactSource[] = [];
+  readonly taskSources: TaskSource[] = [];
   /** Wird vom Suchmodul gesetzt, wenn ein Index verfügbar ist */
   searchIndex: SearchIndexHook | null = null;
 
