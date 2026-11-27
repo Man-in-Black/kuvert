@@ -164,7 +164,9 @@ export type ServerEvent =
   /** Anruf begonnen/geändert/beendet (call null); ring = jemand ruft mich an */
   | { type: 'chat.call'; conversationId: string; call: ChatCall | null; ring?: ChatRing }
   /** 3CX: Anruf an der eigenen Nebenstelle klingelt, wurde angenommen, ist vorbei oder verpasst */
-  | { type: 'threecx.call'; call: ThreeCxIncomingCall };
+  | { type: 'threecx.call'; call: ThreeCxIncomingCall }
+  /** Zeiterfassung: eigene Einträge, gemeinsame Kunden/Projekte/Tätigkeiten oder Import-Fortschritt geändert */
+  | { type: 'timetrack.changed'; scope: 'entries' | 'masterdata' | 'import' };
 
 /* ───────────────────────────── KI ───────────────────────────── */
 

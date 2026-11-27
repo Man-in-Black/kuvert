@@ -31,6 +31,7 @@ const TYPES: ServerEvent['type'][] = [
   'chat.categories',
   'chat.call',
   'threecx.call',
+  'timetrack.changed',
 ];
 
 export function connectEvents() {

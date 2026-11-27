@@ -20,6 +20,7 @@ import search from '@/features/search/module';
 import chat from '@/features/chat/module';
 import triage from '@/features/triage/module';
 import threecx, { phoneModule } from '@/features/threecx/module';
+import timetrack from '@/features/timetrack/module';
 
 export const allModules: WebModule[] = [
   mail,
@@ -28,6 +29,7 @@ export const allModules: WebModule[] = [
   contacts,
   phoneModule,
   tasks,
+  timetrack,
   files,
   archive,
   settings,
