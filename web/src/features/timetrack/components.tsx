@@ -11,6 +11,7 @@ import { Badge, Button, Checkbox, ColorDot, Dropdown, EmptyState, Field, IconBut
 import { Combobox, type ComboItem } from './Combobox';
 import { cn } from '@/lib/utils';
 import { TimeRangeEditor, type TimeRangeValue } from './TimeRangeEditor';
+import { DayTimeline } from './DayTimeline';
 import { CopyTextButton, DoneToggle, EntryChips, TagMenu, useEntryMeta } from './EntryTags';
 import { useExtensions } from '@/modules/context';
 import { formatClock, formatDuration, formatMoney, roundUpSeconds, useActiveEntries, useElapsed, useEntryActions, useLiveTotal, useMasterLookup, useRecent, useTags, useTtSettings } from './api';
@@ -384,6 +385,7 @@ export function dayLabel(key: string): string {
 /** Einträge nach Tagen gruppiert, je Tag mit Summe */
 export function EntryDays({ entries, compact, empty }: { entries: TtEntry[]; compact?: boolean; empty?: ReactNode }) {
   const [editing, setEditing] = useState<TtEntry | null>(null);
+  const [filling, setFilling] = useState<{ begin: Date; duration: number } | null>(null);
   const { confirm, dialog } = useConfirm();
   const { restart, remove } = useEntryActions();
   const days = useMemo(() => {
@@ -400,7 +402,7 @@ export function EntryDays({ entries, compact, empty }: { entries: TtEntry[]; com
   return (
     <div className="space-y-4">
       {days.map(([day, list]) => (
-        <DaySection key={day} day={day} list={list} compact={compact}>
+        <DaySection key={day} day={day} list={list} compact={compact} onSelect={setEditing} onFillGap={(begin, duration) => setFilling({ begin, duration })}>
           {list.map((e) => (
             <EntryRow
               key={e.id}
@@ -416,19 +418,37 @@ export function EntryDays({ entries, compact, empty }: { entries: TtEntry[]; com
         </DaySection>
       ))}
       {editing && <EntryEditor entry={editing} onClose={() => setEditing(null)} />}
+      {filling && <EntryEditor entry={null} defaultRange={filling} onClose={() => setFilling(null)} />}
       {dialog}
     </div>
   );
 }
 
-function DaySection({ day, list, compact, children }: { day: string; list: TtEntry[]; compact?: boolean; children: ReactNode }) {
+function DaySection({
+  day,
+  list,
+  compact,
+  onSelect,
+  onFillGap,
+  children,
+}: {
+  day: string;
+  list: TtEntry[];
+  compact?: boolean;
+  onSelect?: (e: TtEntry) => void;
+  onFillGap?: (begin: Date, durationSec: number) => void;
+  children: ReactNode;
+}) {
   const total = useLiveTotal(list);
   return (
     <section className={cn(!compact && 'overflow-hidden rounded-2xl border border-border bg-surface shadow-card')}>
-      <header className={cn('flex items-center justify-between gap-2', compact ? 'px-1 pb-1' : 'border-b border-border bg-surface-2/50 px-4 py-2')}>
+      <header className={cn('flex items-center justify-between gap-2', compact ? 'px-1 pb-1' : 'bg-surface-2/50 px-4 pb-1 pt-2')}>
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">{dayLabel(day)}</span>
         <span className="font-mono text-xs font-semibold tabular-nums">{formatDuration(total)}</span>
       </header>
+      <div className={cn(!compact && 'border-b border-border bg-surface-2/50')}>
+        <DayTimeline day={day} list={list} compact={compact} onSelect={onSelect} onFillGap={onFillGap} />
+      </div>
       <div className={cn(!compact && 'divide-y divide-border')}>{children}</div>
     </section>
   );
@@ -495,13 +515,24 @@ function EntryRow({ e, compact, onEdit, onRestart, onDelete }: { e: TtEntry; com
 /* ═════════════════════════════ Eintrag bearbeiten/anlegen ═════════════════════════════ */
 
 /** entry = null → neuer Eintrag (optional mit Vorgabe-Tag) */
-export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | null; defaultDate?: Date; onClose: () => void }) {
+export function EntryEditor({
+  entry,
+  defaultDate,
+  defaultRange,
+  onClose,
+}: {
+  entry: TtEntry | null;
+  defaultDate?: Date;
+  /** Neuer Eintrag für einen bestimmten Zeitraum (z. B. eine Lücke im Zeitstrahl) */
+  defaultRange?: { begin: Date; duration: number };
+  onClose: () => void;
+}) {
   const { save } = useEntryActions();
   const { projects, activities, customers } = useMasterLookup();
   const { data: recent } = useRecent();
   const running = !!entry && !entry.end;
 
-  const initialBegin = entry ? new Date(entry.begin) : (() => {
+  const initialBegin = entry ? new Date(entry.begin) : defaultRange ? new Date(defaultRange.begin) : (() => {
     const d = defaultDate ? new Date(defaultDate) : new Date();
     if (!defaultDate) d.setHours(d.getHours() - 1);
     else d.setHours(9, 0, 0, 0);
@@ -511,7 +542,7 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
 
   const [projectId, setProjectId] = useState(entry?.projectId ?? recent?.[0]?.projectId ?? '');
   const [activityId, setActivityId] = useState(entry?.activityId ?? (entry ? '' : (recent?.[0]?.activityId ?? '')));
-  const [range, setRange] = useState<TimeRangeValue>(() => ({ begin: initialBegin, duration: running ? null : entry ? entry.duration : 3600 }));
+  const [range, setRange] = useState<TimeRangeValue>(() => ({ begin: initialBegin, duration: running ? null : entry ? entry.duration : (defaultRange?.duration ?? 3600) }));
   const [description, setDescription] = useState(entry?.description ?? '');
   const [tags, setTags] = useState((entry?.tags ?? []).join(', '));
   const [billable, setBillable] = useState(entry?.billable ?? true);
