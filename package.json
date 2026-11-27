@@ -1,7 +1,7 @@
 {
   "name": "kuvert",
   "private": true,
-  "version": "0.18.4",
+  "version": "0.18.5",
   "description": "Kuvert – modularer, selbst gehosteter Webmail-, Kalender-, Kontakte- und Aufgaben-Client",
   "workspaces": ["shared", "server", "web"],
   "scripts": {

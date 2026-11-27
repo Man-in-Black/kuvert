@@ -77,7 +77,7 @@ Deep-Link für Suchen: `/archive?q=Rechnung&from=2026-01-01`
 - Überschreitet ein Benutzer das Anfragelimit des Archivs (HTTP 429), zeigt Kuvert einen Hinweis.
 - Die Archiv-API ist rein lesend; Kuvert verändert keine archivierten Daten.
 
-## 3CX (Click-to-Call)
+## 3CX (Click-to-Call, eingehende Anrufe)
 
 Anbindung an die Telefonanlage **3CX V20** über die **Call Control API**: Ein Klick auf eine
 Telefonnummer in Kuvert (Kontakte, Ansprechpartner) startet den Anruf über die eigene Nebenstelle.
@@ -117,6 +117,25 @@ Mit aktiver Anbindung gibt es in der Navigation den Bereich **Telefon**:
 | **Anrufliste** | Eigene Anrufe der letzten 14 Tage, nach Tagen gruppiert, Filter „Verpasste“, Rückruf per Klick | Konfigurations-API (Anrufbericht) |
 | **Telefonbuch** | Firmen-Telefonbuch der Anlage durchsuchen (Name, Firma, Nummer), anrufen oder Mail schreiben | Konfigurations-API |
 | **Kollegen** | Alle Nebenstellen mit Status, „telefoniert“ (bei überwachten Nebenstellen) und „abgemeldet“, Anruf auf Durchwahl oder Mobil | Konfigurations-API + Call Control |
+
+### Eingehende Anrufe
+
+Klingelt die Nebenstelle eines Benutzers, meldet Kuvert den Anruf sofort – als Hinweis im Fenster,
+Desktop-Benachrichtigung und Web Push, auf Wunsch mit Ton. Der Name kommt aus den **Kontakten des Benutzers**
+(alle Konten und Kontaktquellen), sonst aus dem **3CX-Telefonbuch** bzw. von der Anlage; verglichen werden die
+letzten neun Ziffern, sodass `+49 30 1234567` und `030 1234567` zueinander passen. Wird der Anruf angenommen,
+verschwindet der Hinweis; hört es auf zu klingeln, ohne dass abgehoben wurde, bleibt **„Verpasster Anruf von …“**
+mit **„Zurückrufen“** (Click-to-Call) stehen.
+
+- Quelle ist der **WebSocket der Call Control API** (`wss://…/callcontrol/ws`, gleiche Freigabe wie Click-to-Call,
+  nur für überwachte Nebenstellen). Ist er nicht erreichbar, fragt Kuvert die Anlage alle 3 Sekunden ab
+  (eine Anfrage für alle Nebenstellen) und versucht es weiter; das Server-Log meldet das einmal als Warnung.
+- Anrufe über **Warteschlangen und Ringgruppen** erscheinen mit „über …“. Hört es dort ohne Annahme auf zu klingeln,
+  gilt der Anruf nicht als verpasst – eine Kollegin kann ihn angenommen haben.
+- Nach einem Click-to-Call aus Kuvert klingelt bei manchen Geräten zuerst das eigene Telefon – das meldet Kuvert
+  nicht als eingehenden Anruf.
+- Abschaltbar je Benutzer unter **Einstellungen → Telefonie → Eingehende Anrufe**; Ton und
+  Desktop-Benachrichtigungen folgen *Einstellungen → Benachrichtigungen*.
 
 Deep-Link: `/phone?number=+4930123456` füllt das Wahlfeld, `/phone?tab=contacts&q=Müller` sucht im Telefonbuch.
 

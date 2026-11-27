@@ -8,6 +8,7 @@ import { lazy, Suspense } from 'react';
 import { Phone, PhoneCall } from 'lucide-react';
 import type { WebModule } from '@/modules/types';
 import { Skeleton } from '@/components/ui';
+import { CallService } from './CallService';
 
 const SettingsLazy = lazy(() => import('./ThreeCxSettings').then((m) => ({ default: m.ThreeCxSettingsSection })));
 const PhoneLazy = lazy(() => import('./PhonePage').then((m) => ({ default: m.PhonePage })));
@@ -64,6 +65,8 @@ export const phoneModule: WebModule = {
       keywords: 'telefon anrufen 3cx wählen anrufliste kollegen',
     },
   ],
+  // Eingehende und verpasste Anrufe melden
+  services: [CallService],
 };
 
 export default mod;

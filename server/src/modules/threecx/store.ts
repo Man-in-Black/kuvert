@@ -17,6 +17,10 @@ export const migrations = [
       );
     `,
   },
+  {
+    id: 'threecx-002',
+    sql: `ALTER TABLE threecx_extensions ADD COLUMN notify_calls INTEGER NOT NULL DEFAULT 1;`,
+  },
 ];
 
 interface StoredConfig {
@@ -82,15 +86,19 @@ interface ExtRow {
   user_id: string;
   extension: string;
   device_id: string | null;
+  /** 1 = bei eingehenden Anrufen benachrichtigen */
+  notify_calls: number;
 }
+
+const COLS = 'user_id, extension, device_id, notify_calls';
 
 export const extensions = {
   get(userId: string): ExtRow | undefined {
-    return getDb().prepare('SELECT user_id, extension, device_id FROM threecx_extensions WHERE user_id = ?').get(userId) as ExtRow | undefined;
+    return getDb().prepare(`SELECT ${COLS} FROM threecx_extensions WHERE user_id = ?`).get(userId) as ExtRow | undefined;
   },
 
   all(): ExtRow[] {
-    return getDb().prepare('SELECT user_id, extension, device_id FROM threecx_extensions').all() as ExtRow[];
+    return getDb().prepare(`SELECT ${COLS} FROM threecx_extensions`).all() as ExtRow[];
   },
 
   /** Nebenstelle setzen (null = Zuordnung entfernen); bei Wechsel das bevorzugte Gerät verwerfen */
@@ -108,6 +116,10 @@ export const extensions = {
            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
       )
       .run(userId, extension);
+  },
+
+  setNotifyCalls(userId: string, on: boolean) {
+    getDb().prepare('UPDATE threecx_extensions SET notify_calls = ? WHERE user_id = ?').run(on ? 1 : 0, userId);
   },
 
   setDevice(userId: string, deviceId: string | null) {

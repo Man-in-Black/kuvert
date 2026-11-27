@@ -51,13 +51,25 @@ export interface CcDevice {
 
 export interface CcParticipant {
   id: number;
+  /** Ringing (klingelt bei mir), Dialing (ich wähle), Connected … */
   status: string;
   dn: string;
   party_caller_name?: string;
   party_dn?: string;
   party_caller_id?: string;
+  /** Art der Gegenstelle, z. B. Wextension (intern), Wexternalline (extern) */
+  party_dn_type?: string;
   device_id?: string;
   callid?: number;
+  /** Wer den Anruf zugestellt hat, z. B. Warteschlange oder Ringgruppe */
+  originated_by_dn?: string;
+  originated_by_type?: string;
+}
+
+/** Meldung des Call-Control-WebSockets: event_type 0 = angelegt/geändert, 1 = entfernt */
+export interface CcWsMessage {
+  sequence?: number;
+  event?: { event_type?: number; entity?: string; attached_data?: unknown };
 }
 
 export interface CcEntity {
@@ -246,6 +258,16 @@ export class ThreeCxClient {
   }
 
   /* ───────────── Call Control ───────────── */
+
+  /**
+   * Echtzeit-Ereignisse aller überwachten Nebenstellen (wss://…/callcontrol/ws). Meldet nur, welche
+   * Entität sich geändert hat (z. B. /callcontrol/100/participants/7) – den Zustand liest man per REST.
+   */
+  async openEvents(): Promise<WebSocket> {
+    const token = await this.token();
+    const url = `${this.baseUrl.replace(/^http/i, 'ws')}/callcontrol/ws`;
+    return new WebSocket(url, { headers: { Authorization: `Bearer ${token}` } });
+  }
 
   /** Alle Nebenstellen, die die API-Anwendung überwacht */
   async entities(): Promise<CcEntity[]> {

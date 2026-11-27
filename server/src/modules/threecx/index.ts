@@ -6,6 +6,8 @@
  * automatisch über die E-Mail-Adresse (braucht zusätzlich „3CX Configuration API Access“).
  * Benutzer wählen nur das bevorzugte Gerät; die Nebenstelle selbst legt der Admin fest, damit
  * niemand von fremden Apparaten aus telefoniert.
+ * Eingehende Anrufe an der eigenen Nebenstelle meldet Kuvert in Echtzeit (monitor.ts), auf Wunsch
+ * mit Namen aus den Kontakten; abschaltbar je Benutzer unter Einstellungen → Telefonie.
  *
  * Vorbelegung per Umgebung: THREECX_URL, THREECX_CLIENT_ID, THREECX_API_KEY
  */
@@ -31,9 +33,12 @@ import { requireAdmin } from '../../routes/admin.js';
 import { parse } from '../../routes/util.js';
 import { normalizeExtension, normalizeNumber, normalizeThreeCxUrl } from './client.js';
 import { activeCalls, callLog, colleagues, searchContacts, setMyProfile } from './directory.js';
+import { CallMonitor } from './monitor.js';
 import { adminConfig, extensions, migrations } from './store.js';
 
 type IdParams = { Params: { id: string } };
+
+let monitor: CallMonitor | null = null;
 
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -61,6 +66,17 @@ export default defineModule({
     } catch {
       return [];
     }
+  },
+
+  init(ctx) {
+    monitor = new CallMonitor(ctx);
+    // Etwas verzögert, damit der Start nicht auf die Anlage wartet
+    setTimeout(() => monitor?.start(), 5_000).unref();
+  },
+
+  shutdown() {
+    monitor?.stop();
+    monitor = null;
   },
 
   routes(app, ctx) {
@@ -91,6 +107,8 @@ export default defineModule({
         secret: b.secret?.trim() || undefined,
       };
       adminConfig.set(cfg);
+      // Neue Zugangsdaten bzw. an/aus → Anruf-Überwachung neu aufbauen
+      monitor?.start();
       audit.log('threecx.config_updated', { req, details: { enabled: cfg.enabled, baseUrl: cfg.baseUrl, clientId: cfg.clientId, secretChanged: !!cfg.secret } });
       return adminConfig.get();
     });
@@ -201,7 +219,14 @@ export default defineModule({
     app.get('/me', async (req): Promise<ThreeCxMe> => {
       const enabled = adminConfig.ready();
       const row = extensions.get(req.user.id);
-      const me: ThreeCxMe = { enabled, extension: row?.extension ?? null, deviceId: row?.device_id ?? null, devices: [], devicesError: null };
+      const me: ThreeCxMe = {
+        enabled,
+        extension: row?.extension ?? null,
+        deviceId: row?.device_id ?? null,
+        devices: [],
+        devicesError: null,
+        notifyCalls: row ? !!row.notify_calls : true,
+      };
       if (enabled && row) {
         try {
           me.devices = (await adminConfig.client().devices(row.extension)).map((d) => ({ deviceId: d.device_id, userAgent: d.user_agent || d.device_id }));
@@ -220,6 +245,15 @@ export default defineModule({
       return { ok: true };
     });
 
+    /** Bei eingehenden Anrufen benachrichtigen (an/aus) */
+    app.put('/me/notify', async (req) => {
+      const row = extensions.get(req.user.id);
+      if (!row) throw new AppError(409, 'threecx_no_extension', 'Dir ist noch keine Nebenstelle zugeordnet');
+      const b = parse(z.object({ notifyCalls: z.boolean() }), req.body);
+      extensions.setNotifyCalls(req.user.id, b.notifyCalls);
+      return { ok: true };
+    });
+
     /* ═════════════════════════════ Anrufen ═════════════════════════════ */
 
     app.post('/call', async (req): Promise<ThreeCxCallResult> => {
@@ -234,6 +268,7 @@ export default defineModule({
       }
       // Bevorzugtes Gerät, sonst das einzige; bei mehreren ohne Auswahl entscheidet 3CX
       const device = devices.find((d) => d.device_id === row.device_id) ?? (devices.length === 1 ? devices[0] : undefined);
+      monitor?.noteOutgoing(row.extension, destination);
       const res = await client.makeCall(row.extension, destination, device?.device_id ?? null);
       ctx.log.info({ userId: req.user.id, extension: row.extension, status: res.status }, '3CX: Anruf gestartet');
 

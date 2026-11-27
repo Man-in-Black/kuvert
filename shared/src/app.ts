@@ -4,6 +4,7 @@ import type { CalendarEvent } from './pim';
 import type { MessageSummary } from './mail';
 import type { ChatCall, ChatMessage, ChatRing } from './chat';
 import type { TriageInfo } from './triage';
+import type { ThreeCxIncomingCall } from './telephony';
 
 export interface User {
   id: string;
@@ -161,7 +162,9 @@ export type ServerEvent =
   /** Abschnitte/Favoriten eines verbundenen Dienstes geändert (neu laden) */
   | { type: 'chat.categories'; connectionId: string }
   /** Anruf begonnen/geändert/beendet (call null); ring = jemand ruft mich an */
-  | { type: 'chat.call'; conversationId: string; call: ChatCall | null; ring?: ChatRing };
+  | { type: 'chat.call'; conversationId: string; call: ChatCall | null; ring?: ChatRing }
+  /** 3CX: Anruf an der eigenen Nebenstelle klingelt, wurde angenommen, ist vorbei oder verpasst */
+  | { type: 'threecx.call'; call: ThreeCxIncomingCall };
 
 /* ───────────────────────────── KI ───────────────────────────── */
 

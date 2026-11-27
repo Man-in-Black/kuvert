@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle2, PhoneCall, PhoneOutgoing, PlugZap, Smartphone, Sparkles, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, PhoneCall, PhoneIncoming, PhoneOutgoing, PlugZap, Smartphone, Sparkles, Users } from 'lucide-react';
 import type { ThreeCxAdminConfig, ThreeCxAssignment, ThreeCxAutoAssignResult, ThreeCxTestResult } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
 import { qk, useFeature } from '@/lib/queries';
@@ -34,6 +34,12 @@ export function ThreeCxSettingsSection() {
       qc.invalidateQueries({ queryKey: tk.me });
       toast.success('Gespeichert');
     },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
+
+  const setNotify = useMutation({
+    mutationFn: (notifyCalls: boolean) => api('/threecx/me/notify', { method: 'PUT', body: { notifyCalls } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: tk.me }),
     onError: (err) => toast.error(errorMessage(err)),
   });
 
@@ -81,6 +87,18 @@ export function ThreeCxSettingsSection() {
                 </Field>
               </div>
             )}
+          </Card>
+          <Card
+            title="Eingehende Anrufe"
+            icon={<PhoneIncoming />}
+            description="Klingelt deine Nebenstelle, meldet Kuvert den Anruf mit Namen aus deinen Kontakten bzw. dem 3CX-Telefonbuch – als Hinweis, Desktop-Benachrichtigung und Web Push. Verpasste Anrufe bleiben mit „Zurückrufen“ stehen. Ton und Desktop-Benachrichtigungen richten sich nach Einstellungen → Benachrichtigungen."
+          >
+            <Switch
+              checked={setNotify.isPending ? !!setNotify.variables : me.notifyCalls}
+              disabled={setNotify.isPending}
+              onChange={(v) => setNotify.mutate(v)}
+              label="Bei eingehenden und verpassten Anrufen benachrichtigen"
+            />
           </Card>
           <Card title="Probeanruf" icon={<PhoneOutgoing />} description="Je nach Gerät klingelt zuerst dein Telefon; nach dem Abheben wird die Nummer gewählt.">
             <form

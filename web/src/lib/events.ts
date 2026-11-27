@@ -30,6 +30,7 @@ const TYPES: ServerEvent['type'][] = [
   'chat.connection',
   'chat.categories',
   'chat.call',
+  'threecx.call',
 ];
 
 export function connectEvents() {

@@ -59,6 +59,8 @@ export interface ThreeCxMe {
   deviceId: string | null;
   devices: ThreeCxDevice[];
   devicesError?: string | null;
+  /** Bei eingehenden Anrufen benachrichtigen (Hinweis, Desktop, Web Push) */
+  notifyCalls: boolean;
 }
 
 export interface ThreeCxCallResult {
@@ -126,6 +128,24 @@ export interface ThreeCxCallLogEntry {
 export interface ThreeCxCallLog {
   entries: ThreeCxCallLogEntry[];
   days: number;
+}
+
+/** Eingehender Anruf an der eigenen Nebenstelle (Echtzeit-Ereignis "threecx.call") */
+export interface ThreeCxIncomingCall {
+  /** Eindeutig je Anruf und Nebenstelle – Folgemeldungen ersetzen bzw. schließen die Benachrichtigung */
+  key: string;
+  /** ringing: klingelt · answered: angenommen · ended: vorbei (angenommen oder woanders) · missed: verpasst */
+  state: 'ringing' | 'answered' | 'ended' | 'missed';
+  /** Rufnummer bzw. Nebenstelle der anrufenden Person */
+  number: string | null;
+  /** Name aus Kuvert-Kontakten, 3CX-Telefonbuch oder laut 3CX */
+  name: string | null;
+  company: string | null;
+  /** Interner Anruf von einer Nebenstelle */
+  internal: boolean;
+  /** Über Warteschlange oder Ringgruppe zugestellt (deren Nummer bzw. Name) */
+  via: string | null;
+  at: string;
 }
 
 /** Laufendes Gespräch der eigenen Nebenstelle */
