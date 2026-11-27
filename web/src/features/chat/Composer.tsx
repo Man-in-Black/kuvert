@@ -1,10 +1,12 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ALargeSmall, File as FileIcon, Loader2, Paperclip, Pencil, Reply, SendHorizontal, Smile, X } from 'lucide-react';
-import type { ChatBridgeType, ChatCapabilities, ChatConversation, ChatMessage, ChatUser, UploadInfo } from '@kuvert/shared';
+import { ALargeSmall, Cloud, File as FileIcon, Link2, Loader2, Paperclip, Pencil, Reply, SendHorizontal, Smile, Upload, X } from 'lucide-react';
+import type { ChatBridgeType, ChatCapabilities, ChatConversation, ChatMessage, ChatUser, ShareLink, UploadInfo } from '@kuvert/shared';
 import { Button, IconButton } from '@/components/ui';
-import { errorMessage, uploadFile } from '@/lib/api';
+import { api, errorMessage, uploadFile } from '@/lib/api';
+import { useAccountsWith } from '@/lib/queries';
+import { StoragePickerDialog, type StoragePickResult } from '@/features/files/StorageBrowser';
 import { cn, formatSize } from '@/lib/utils';
 import { FULL_CAPS, applyNewMessage, chatApi, drafts, upsertMessage, useChatSettings, useParticipants, userName } from './api';
 import type { Editor } from '@tiptap/react';
@@ -36,6 +38,8 @@ interface PendingFile {
   progress: number;
   upload?: UploadInfo;
   error?: string;
+  /** Wird gerade aus einem Cloud-Speicher übernommen (kein Fortschritt bekannt) */
+  cloud?: boolean;
 }
 
 export interface ComposerHandle {
@@ -80,6 +84,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, r
   const editorRef = useRef<ChatEditorHandle>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const hasCloud = useAccountsWith('storage').length > 0;
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [cloudMode, setCloudMode] = useState<'attach' | 'link' | null>(null);
   const lastTyping = useRef(0);
   const stash = useRef<string | null>(null);
 
@@ -136,6 +143,57 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, r
     }
     editorRef.current?.focus();
   };
+
+  /** Dateien aus einem Cloud-Speicher als Anhang übernehmen (Server lädt sie und legt einen Upload an) */
+  const addCloudFiles = (picked: StoragePickResult[]) => {
+    const room = MAX_FILES - pending.length;
+    if (picked.length > room) toast.warning(`Höchstens ${MAX_FILES} Dateien pro Nachricht`);
+    for (const p of picked.slice(0, Math.max(room, 0))) {
+      const key = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setPending((list) => [...list, { key, name: p.item.name, size: p.item.size ?? 0, progress: 0, cloud: true }]);
+      api<UploadInfo>(`/storage/accounts/${p.accountId}/attach`, { method: 'POST', body: { itemId: p.item.id } })
+        .then((upload) => setPending((list) => list.map((x) => (x.key === key ? { ...x, upload, size: upload.size, progress: 100 } : x))))
+        .catch((err) => setPending((list) => list.map((x) => (x.key === key ? { ...x, error: errorMessage(err) } : x))));
+    }
+    editorRef.current?.focus();
+  };
+
+  /** Freigabelinks erzeugen und als Links in die Nachricht einfügen */
+  const insertCloudLinks = async (picked: StoragePickResult[]) => {
+    for (const p of picked) {
+      try {
+        const link = await api<ShareLink>(`/storage/accounts/${p.accountId}/share`, { method: 'POST', body: { itemId: p.item.id } });
+        const ed = editorRef.current?.editor;
+        if (!ed || ed.isDestroyed) return;
+        ed.chain()
+          .focus()
+          .insertContent([
+            { type: 'text', text: p.item.name, marks: [{ type: 'link', attrs: { href: link.url } }] },
+            { type: 'text', text: ' ' },
+          ])
+          .run();
+      } catch (err) {
+        toast.error(`Freigabelink für „${p.item.name}“ fehlgeschlagen: ${errorMessage(err)}`);
+      }
+    }
+  };
+
+  const onCloudPick = (picked: StoragePickResult[]) => {
+    const mode = cloudMode;
+    setCloudMode(null);
+    if (mode === 'attach') addCloudFiles(picked);
+    else if (mode === 'link') void insertCloudLinks(picked);
+  };
+
+  const attachItems = [
+    ...(caps.files
+      ? [
+          { label: 'Datei hochladen …', icon: <Upload />, onClick: () => fileInput.current?.click() },
+          { label: 'Aus Cloud anhängen …', icon: <Cloud />, onClick: () => setCloudMode('attach') },
+        ]
+      : []),
+    { label: 'Cloud-Link einfügen …', icon: <Link2 />, onClick: () => setCloudMode('link') },
+  ];
 
   useImperativeHandle(ref, () => ({ addFiles, focus: () => editorRef.current?.focus() }));
 
@@ -252,7 +310,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, r
               {!f.upload && !f.error ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted" /> : <FileIcon className="h-4 w-4 shrink-0 text-muted" />}
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{f.name}</span>
-                <span className="block text-[10.5px] text-muted">{f.error ? 'Upload fehlgeschlagen' : f.upload ? formatSize(f.size) : `${f.progress} %`}</span>
+                <span className="block text-[10.5px] text-muted">
+                  {f.error ? 'Upload fehlgeschlagen' : f.upload ? formatSize(f.size) : f.cloud ? 'Wird aus der Cloud geladen …' : `${f.progress} %`}
+                </span>
               </span>
               <button
                 type="button"
@@ -262,7 +322,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, r
               >
                 <X className="h-3.5 w-3.5" />
               </button>
-              {!f.upload && !f.error && <span className="absolute bottom-0 left-0 h-0.5 bg-primary transition-all" style={{ width: `${f.progress}%` }} />}
+              {!f.upload && !f.error && !f.cloud && <span className="absolute bottom-0 left-0 h-0.5 bg-primary transition-all" style={{ width: `${f.progress}%` }} />}
             </div>
           ))}
         </div>
@@ -271,10 +331,40 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, r
       <div className="overflow-hidden rounded-2xl border border-input-border bg-input transition-[border-color,box-shadow] focus-within:border-primary focus-within:shadow-glow">
         {showFormat && <FormatBar editor={editor} />}
         <div className="flex items-end gap-1 py-1 pl-1 pr-1">
-          {!p.editing && caps.files && (
-            <IconButton label="Datei anhängen" size="icon-sm" className="mb-0.5 h-8 w-8" onClick={() => fileInput.current?.click()}>
-              <Paperclip className="h-[18px] w-[18px]" />
-            </IconButton>
+          {!p.editing && hasCloud ? (
+            <Popover
+              open={attachOpen}
+              onOpenChange={setAttachOpen}
+              side="top"
+              className="min-w-52 p-1"
+              trigger={
+                <IconButton label="Anhängen" size="icon-sm" className="mb-0.5 h-8 w-8" onClick={() => setAttachOpen((o) => !o)}>
+                  <Paperclip className="h-[18px] w-[18px]" />
+                </IconButton>
+              }
+            >
+              {attachItems.map((it) => (
+                <button
+                  key={it.label}
+                  type="button"
+                  onClick={() => {
+                    setAttachOpen(false);
+                    it.onClick();
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm text-fg transition-colors hover:bg-hover"
+                >
+                  <span className="text-muted [&_svg]:h-4 [&_svg]:w-4">{it.icon}</span>
+                  <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                </button>
+              ))}
+            </Popover>
+          ) : (
+            !p.editing &&
+            caps.files && (
+              <IconButton label="Datei anhängen" size="icon-sm" className="mb-0.5 h-8 w-8" onClick={() => fileInput.current?.click()}>
+                <Paperclip className="h-[18px] w-[18px]" />
+              </IconButton>
+            )
           )}
           <IconButton label={showFormat ? 'Formatierung ausblenden' : 'Formatierung'} size="icon-sm" className={cn('mb-0.5 h-8 w-8', showFormat && 'text-primary')} onClick={toggleFormat}>
             <ALargeSmall className="h-[18px] w-[18px]" />
@@ -349,6 +439,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, r
           addFiles([...(e.target.files ?? [])]);
           e.target.value = '';
         }}
+      />
+      <StoragePickerDialog
+        open={cloudMode !== null}
+        onClose={() => setCloudMode(null)}
+        mode="file"
+        multiple
+        title={cloudMode === 'link' ? 'Cloud-Link einfügen' : 'Aus Cloud anhängen'}
+        onPick={onCloudPick}
       />
     </div>
   );
