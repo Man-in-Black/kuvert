@@ -30,7 +30,7 @@ function PlayDot({ className, title }: { className?: string; title: string }) {
   );
 }
 
-const runningTitle = (list: TtEntry[]) => (list.length === 1 ? `Timer läuft: ${list[0]!.projectName}` : `${list.length} Timer laufen`);
+const runningTitle = (list: TtEntry[]) => (list.length === 1 ? `Timer läuft: ${list[0]!.customerName || list[0]!.projectName}` : `${list.length} Timer laufen`);
 
 /** Navigation links (NavItem.Status) */
 export function TimerNavStatus({ variant }: { variant: 'rail' | 'dot' | 'icon' }) {
@@ -52,8 +52,7 @@ function RunningList({ list }: { list: TtEntry[] }) {
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
           </span>
           <span className="min-w-0 flex-1 truncate text-fg/80" title={[e.customerName, e.projectName, e.activityName, e.description].filter(Boolean).join(' › ')}>
-            {e.projectName}
-            {e.activityName && <span className="text-muted"> · {e.activityName}</span>}
+            {e.customerName || e.projectName}
           </span>
           <span className="shrink-0 font-mono tabular-nums text-success">{formatClock(Math.max(0, (now - Date.parse(e.begin)) / 1000))}</span>
         </div>
