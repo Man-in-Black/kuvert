@@ -2,14 +2,15 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AtSign, Link2, Pencil, Plus, RefreshCw, Search, ShieldAlert, Trash2, UserPlus } from 'lucide-react';
-import type { AdminUser, MailcowInstanceInfo, MailcowMailbox } from '@kuvert/shared';
+import { AtSign, Link2, Mail, Pencil, Plus, RefreshCw, Search, ShieldAlert, Trash2, UserPlus } from 'lucide-react';
+import type { AdminUser, MailcowInstanceInfo, MailcowLink, MailcowLinkResult, MailcowMailbox } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
 import {
   Avatar,
   Badge,
   Button,
   Card,
+  Checkbox,
   EmptyState,
   Field,
   IconButton,
@@ -24,6 +25,7 @@ import {
   Th,
   useConfirm,
 } from '@/components/ui';
+import { Combobox, type ComboItem } from '@/components/ui/Combobox';
 import { formatBytes, formatDate, generatePassword, instPath, mk, useAliases, useDomains, useLinks, useMailboxes, useQuarantine, useSyncJobs } from './api';
 import { ProvisionDialog } from './ProvisionDialog';
 
@@ -468,23 +470,55 @@ export function LinksTab({ instance }: P) {
   const { data: mailboxes } = useMailboxes(instance.id);
   const [userId, setUserId] = useState('');
   const [mailbox, setMailbox] = useState('');
+  const [createAccount, setCreateAccount] = useState(true);
+  const [granting, setGranting] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   const mine = (links ?? []).filter((l) => l.instanceId === instance.id);
+  const userItems = useMemo<ComboItem[]>(() => (users ?? []).map((u) => ({ id: u.id, label: `${u.name} (${u.email})` })), [users]);
+  const mailboxItems = useMemo<ComboItem[]>(
+    () => (mailboxes ?? []).map((m) => ({ id: m.username, label: m.username, search: m.name, hint: m.name || undefined })),
+    [mailboxes],
+  );
+
+  const report = (r: MailcowLinkResult, linked: boolean) => {
+    if (r.warnings.length) r.warnings.forEach((w) => toast.warning(w));
+    else if (r.accountCreated) toast.success(linked ? 'Verknüpft – das Postfach erscheint beim Benutzer unter „Mails“' : 'Mailzugriff eingerichtet');
+    else if (r.accountId) toast.success(linked ? 'Verknüpft – der Benutzer hat für dieses Postfach schon ein Konto' : 'Der Benutzer hat für dieses Postfach schon ein Konto');
+    else toast.success('Verknüpfung angelegt');
+  };
 
   const add = useMutation({
-    mutationFn: () => api('/mailcow/links', { method: 'POST', body: { userId, instanceId: instance.id, mailbox } }),
-    onSuccess: () => {
-      toast.success('Verknüpfung angelegt');
+    mutationFn: () => api<MailcowLinkResult>('/mailcow/links', { method: 'POST', body: { userId, instanceId: instance.id, mailbox, createAccount } }),
+    onSuccess: (r) => {
+      report(r, true);
       setMailbox('');
       qc.invalidateQueries({ queryKey: mk.links });
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
 
-  const remove = async (uid: string, mb: string) => {
+  const grant = async (l: MailcowLink) => {
+    if (!(await confirm(<>Für <strong>{l.userEmail}</strong> ein App-Passwort in mailcow anlegen und das Postfach <strong>{l.mailbox}</strong> unter „Mails“ einrichten? Der Benutzer kann damit alle E-Mails des Postfachs lesen und in seinem Namen senden.</>))) return;
+    setGranting(`${l.userId}-${l.mailbox}`);
     try {
-      await api('/mailcow/links', { method: 'DELETE', query: { userId: uid, instanceId: instance.id, mailbox: mb } });
+      const r = await api<MailcowLinkResult>('/mailcow/links', { method: 'POST', body: { userId: l.userId, instanceId: instance.id, mailbox: l.mailbox, createAccount: true } });
+      report(r, false);
       qc.invalidateQueries({ queryKey: mk.links });
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setGranting(null);
+    }
+  };
+
+  const remove = async (l: MailcowLink) => {
+    const managed = l.mailAccess === 'managed';
+    if (managed && !(await confirm(<>Verknüpfung lösen? Das für <strong>{l.userEmail}</strong> eingerichtete Konto <strong>{l.mailbox}</strong> wird aus Kuvert entfernt und das App-Passwort in mailcow gelöscht. Die E-Mails im Postfach bleiben erhalten.</>, { danger: true }))) return;
+    try {
+      await api('/mailcow/links', { method: 'DELETE', query: { userId: l.userId, instanceId: instance.id, mailbox: l.mailbox, ...(managed ? { revoke: '1' } : {}) } });
+      qc.invalidateQueries({ queryKey: mk.links });
+      if (managed) toast.success('Verknüpfung und Mailzugriff entfernt');
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -496,31 +530,45 @@ export function LinksTab({ instance }: P) {
         title="Benutzer mit Postfach verknüpfen"
         description="Verknüpfte Benutzer sehen unter „Mein Postfach“ Kontingent, Aliasse, Wegwerf-Adressen, App-Passwörter und Quarantäne. Beim Einrichten eines mailcow- oder IMAP-Kontos geschieht das automatisch."
         icon={<Link2 />}
-        bodyClassName="flex flex-wrap items-end gap-3"
+        bodyClassName="space-y-3"
       >
-        <Field label="Kuvert-Benutzer" className="min-w-56 flex-1">
-          <Select value={userId} onChange={(e) => setUserId(e.target.value)}>
-            <option value="">Bitte wählen …</option>
-            {(users ?? []).map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} ({u.email})
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Postfach" className="min-w-56 flex-1">
-          <Select value={mailbox} onChange={(e) => setMailbox(e.target.value)}>
-            <option value="">Bitte wählen …</option>
-            {(mailboxes ?? []).map((m) => (
-              <option key={m.username} value={m.username}>
-                {m.username}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Button variant="primary" disabled={!userId || !mailbox} loading={add.isPending} onClick={() => add.mutate()}>
-          Verknüpfen
-        </Button>
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Kuvert-Benutzer" className="min-w-56 flex-1">
+            <Combobox
+              items={userItems}
+              value={userId}
+              onChange={setUserId}
+              placeholder="Bitte wählen …"
+              searchPlaceholder="Name oder E-Mail suchen …"
+              ariaLabel="Kuvert-Benutzer"
+              dots={false}
+            />
+          </Field>
+          <Field label="Postfach" className="min-w-56 flex-1">
+            <Combobox
+              items={mailboxItems}
+              value={mailbox}
+              onChange={setMailbox}
+              placeholder="Bitte wählen …"
+              searchPlaceholder="Postfach suchen …"
+              ariaLabel="Postfach"
+              dots={false}
+            />
+          </Field>
+          <Button variant="primary" disabled={!userId || !mailbox} loading={add.isPending} onClick={() => add.mutate()}>
+            Verknüpfen
+          </Button>
+        </div>
+        <Checkbox
+          checked={createAccount}
+          onChange={setCreateAccount}
+          label={
+            <span>
+              Postfach auch unter „Mails“ einrichten{' '}
+              <span className="text-muted">– Kuvert legt dafür ein App-Passwort in mailcow an; das Postfach-Passwort wird nicht benötigt.</span>
+            </span>
+          }
+        />
       </Card>
 
       {isLoading ? (
@@ -535,7 +583,8 @@ export function LinksTab({ instance }: P) {
             <tr>
               <Th>Benutzer</Th>
               <Th>Postfach</Th>
-              <Th>Seit</Th>
+              <Th>Mails in Kuvert</Th>
+              <Th className="hidden md:table-cell">Seit</Th>
               <Th className="w-12" />
             </tr>
           </thead>
@@ -544,9 +593,20 @@ export function LinksTab({ instance }: P) {
               <tr key={`${l.userId}-${l.mailbox}`} className="hover:bg-hover/50">
                 <Td className="font-medium">{l.userEmail}</Td>
                 <Td>{l.mailbox}</Td>
-                <Td className="text-xs text-muted">{formatDate(l.createdAt, false)}</Td>
                 <Td>
-                  <IconButton label="Verknüpfung lösen" size="icon-sm" className="text-danger" onClick={() => remove(l.userId, l.mailbox)}>
+                  {l.mailAccess === 'managed' ? (
+                    <Badge tone="success">Eingerichtet (App-Passwort)</Badge>
+                  ) : l.mailAccess === 'own' ? (
+                    <Badge tone="info">Eigenes Konto</Badge>
+                  ) : (
+                    <Button size="sm" icon={<Mail className="h-3.5 w-3.5" />} loading={granting === `${l.userId}-${l.mailbox}`} onClick={() => grant(l)}>
+                      Einrichten
+                    </Button>
+                  )}
+                </Td>
+                <Td className="hidden text-xs text-muted md:table-cell">{formatDate(l.createdAt, false)}</Td>
+                <Td>
+                  <IconButton label="Verknüpfung lösen" size="icon-sm" className="text-danger" onClick={() => remove(l)}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </IconButton>
                 </Td>
@@ -555,6 +615,7 @@ export function LinksTab({ instance }: P) {
           </tbody>
         </Table>
       )}
+      {dialog}
     </div>
   );
 }

@@ -11,7 +11,7 @@
 import crypto from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { MailcowLinkedMailbox, MailcowProvisionResult } from '@kuvert/shared';
+import type { MailcowLink, MailcowLinkedMailbox, MailcowLinkResult, MailcowProvisionResult } from '@kuvert/shared';
 import { audit } from '../../core/audit.js';
 import { AppError, BadRequestError, NotFoundError } from '../../core/errors.js';
 import { defineModule, type AccountRecord, type ModuleContext } from '../../core/module.js';
@@ -45,6 +45,69 @@ function autoLink(acc: AccountRecord) {
   }
 }
 
+const APP_PW_PROTOCOLS = ['imap_access', 'smtp_access', 'dav_access'];
+
+/** Eigenes Mail-Konto des Benutzers für dieses Postfach (mailcow oder IMAP) */
+function mailAccountFor(ctx: ModuleContext, userId: string, mailbox: string): AccountRecord | undefined {
+  const mb = mailbox.toLowerCase();
+  return ctx.accounts
+    .list(userId)
+    .find((a) => (a.type === 'mailcow' || a.type === 'imap') && (a.email.toLowerCase() === mb || String(a.config.imapUser ?? '').toLowerCase() === mb));
+}
+
+/** Vom Admin über ein App-Passwort eingerichtet? */
+const isManaged = (acc: AccountRecord, instanceId?: string) =>
+  acc.type === 'mailcow' && !!acc.config.appPasswordId && (!instanceId || acc.config.instanceId === instanceId);
+
+/**
+ * Richtet dem Benutzer das Postfach in Kuvert ein, ohne dass jemand dessen Passwort kennt:
+ * Kuvert legt in mailcow ein App-Passwort (IMAP/SMTP/DAV) an und baut damit ein mailcow-Konto.
+ * Das Passwort liegt nur verschlüsselt im Konto; beim Löschen des Kontos wird es in mailcow entfernt.
+ */
+async function grantMailAccess(ctx: ModuleContext, userId: string, instanceId: string, mailbox: string): Promise<{ accountId: string; created: boolean }> {
+  const existing = mailAccountFor(ctx, userId, mailbox);
+  if (existing) return { accountId: existing.id, created: false };
+
+  const user = users.get(userId);
+  if (!user) throw new NotFoundError('Benutzer');
+  const client = instances.client(instanceId);
+  const listIds = async () => (await client.getList(`app-passwd/all/${enc(mailbox)}`)).map(mapAppPassword).map((p) => p.id);
+
+  const before = new Set(await listIds());
+  const password = randomPassword(32);
+  await client.write('add/app-passwd', {
+    username: mailbox,
+    app_name: `Kuvert (${user.email})`,
+    app_passwd: password,
+    app_passwd2: password,
+    active: '1',
+    protocols: APP_PW_PROTOCOLS,
+  });
+  const appPasswordId = (await listIds()).find((id) => !before.has(id));
+  if (!appPasswordId) throw new AppError(502, 'mailcow_error', 'mailcow: App-Passwort wurde angelegt, aber nicht gefunden');
+
+  try {
+    // verify: der IMAP/SMTP-Login mit dem neuen App-Passwort muss klappen
+    const setup = await buildMailcowSetup({ name: user.name || mailbox, email: mailbox, password, instanceId, enableDav: true }, { verify: true });
+    setup.config = { ...setup.config, appPasswordId };
+    return { accountId: ctx.accounts.create(userId, 'mailcow', setup).id, created: true };
+  } catch (err) {
+    await client.write('delete/app-passwd', [appPasswordId]).catch(() => undefined);
+    throw err;
+  }
+}
+
+/** App-Passwort eines vom Admin eingerichteten Kontos in mailcow löschen (Konto wurde entfernt) */
+async function revokeAppPassword(ctx: ModuleContext, acc: AccountRecord) {
+  if (!isManaged(acc) || !acc.config.instanceId) return;
+  try {
+    await instances.client(String(acc.config.instanceId)).write('delete/app-passwd', [String(acc.config.appPasswordId)]);
+    audit.log('mailcow.access_revoked', { userId: acc.userId, details: { mailbox: acc.email, appPasswordId: acc.config.appPasswordId } });
+  } catch (err) {
+    ctx.log.warn({ err, mailbox: acc.email }, 'mailcow: App-Passwort konnte nicht gelöscht werden');
+  }
+}
+
 /** Prüft, dass das Postfach mit dem Benutzer verknüpft ist, und liefert den API-Client. */
 function own(req: FastifyRequest, instanceId: string, mailbox: string) {
   const mb = mailbox.trim().toLowerCase();
@@ -58,6 +121,7 @@ function updateAccountSecrets(ctx: ModuleContext, userId: string, mailbox: strin
   for (const acc of ctx.accounts.list(userId)) {
     if (acc.email.toLowerCase() !== mailbox && String(acc.config.imapUser ?? '').toLowerCase() !== mailbox) continue;
     if (acc.type !== 'mailcow' && acc.type !== 'imap') continue;
+    if (isManaged(acc)) continue; // nutzt ein App-Passwort, das bleibt gültig
     const secrets: Record<string, unknown> = { ...acc.secrets, imapPassword: password };
     if (secrets.smtpPassword) secrets.smtpPassword = password;
     ctx.accounts.update(userId, acc.id, { secrets, status: 'ok', statusMessage: null });
@@ -102,6 +166,7 @@ export default defineModule({
     }
     ctx.bus.internal.on('account.created', autoLink);
     ctx.bus.internal.on('account.updated', autoLink);
+    ctx.bus.internal.on('account.deleted', (acc) => void revokeAppPassword(ctx, acc));
   },
 
   routes(app, ctx) {
@@ -245,26 +310,56 @@ export default defineModule({
 
     /* ───────────── Verknüpfungen Benutzer ↔ Postfach ───────────── */
 
-    app.get('/links', async (req) => {
+    app.get('/links', async (req): Promise<MailcowLink[]> => {
       requireAdmin(req);
-      return links.all();
+      return links.all().map((l) => {
+        const acc = mailAccountFor(ctx, l.userId, l.mailbox);
+        return { ...l, mailAccess: acc ? (isManaged(acc) ? 'managed' : 'own') : null };
+      });
     });
 
-    app.post('/links', async (req) => {
+    /** Verknüpfen; mit createAccount zusätzlich das Postfach per App-Passwort unter „Mails“ einrichten (auch für bestehende Verknüpfungen) */
+    app.post('/links', async (req): Promise<MailcowLinkResult> => {
       requireAdmin(req);
-      const b = parse(z.object({ userId: z.string(), instanceId: z.string(), mailbox: z.string().email() }), req.body);
+      const b = parse(z.object({ userId: z.string(), instanceId: z.string(), mailbox: z.string().email(), createAccount: z.boolean().default(false) }), req.body);
       if (!users.get(b.userId)) throw new NotFoundError('Benutzer');
       instances.get(b.instanceId);
-      links.add(b.userId, b.instanceId, b.mailbox);
-      audit.log('mailcow.link_added', { req, userId: b.userId, details: { mailbox: b.mailbox } });
-      return { ok: true };
+      const mailbox = b.mailbox.trim().toLowerCase();
+      const isNew = !links.has(b.userId, b.instanceId, mailbox);
+      links.add(b.userId, b.instanceId, mailbox);
+      if (isNew) audit.log('mailcow.link_added', { req, userId: b.userId, details: { mailbox } });
+
+      const warnings: string[] = [];
+      let accountId: string | null = null;
+      let accountCreated = false;
+      if (b.createAccount) {
+        try {
+          const r = await grantMailAccess(ctx, b.userId, b.instanceId, mailbox);
+          accountId = r.accountId;
+          accountCreated = r.created;
+          if (r.created) audit.log('mailcow.access_granted', { req, userId: b.userId, details: { mailbox, accountId } });
+        } catch (err) {
+          warnings.push(`Verknüpft, aber Mailzugriff nicht eingerichtet: ${(err as Error).message}`);
+        }
+      }
+      return { ok: true, accountId, accountCreated, warnings };
     });
 
-    app.delete<{ Querystring: { userId: string; instanceId: string; mailbox: string } }>('/links', async (req) => {
+    /** Verknüpfung lösen; mit revoke=1 auch das vom Admin eingerichtete Konto samt App-Passwort entfernen */
+    app.delete<{ Querystring: { userId: string; instanceId: string; mailbox: string; revoke?: string } }>('/links', async (req) => {
       requireAdmin(req);
-      links.remove(req.query.userId, req.query.instanceId, req.query.mailbox);
-      audit.log('mailcow.link_removed', { req, userId: req.query.userId, details: { mailbox: req.query.mailbox } });
-      return { ok: true };
+      const { userId, instanceId, mailbox } = req.query;
+      let revoked = 0;
+      if (req.query.revoke === '1' || req.query.revoke === 'true') {
+        const managed = ctx.accounts.list(userId).filter((a) => isManaged(a, instanceId) && a.email.toLowerCase() === mailbox.toLowerCase());
+        for (const acc of managed) {
+          await ctx.accounts.delete(userId, acc.id); // App-Passwort entfernt der account.deleted-Handler
+          revoked++;
+        }
+      }
+      links.remove(userId, instanceId, mailbox);
+      audit.log('mailcow.link_removed', { req, userId, details: { mailbox, accountsRemoved: revoked } });
+      return { ok: true, accountsRemoved: revoked };
     });
 
     /* ───────────── Provisionierung ───────────── */
@@ -421,6 +516,9 @@ export default defineModule({
     app.delete<MeParams & { Params: { id: string } }>('/me/:instanceId/:mailbox/app-passwords/:id', async (req) => {
       const { client, mailbox } = own(req, req.params.instanceId, req.params.mailbox);
       if (!(await appPwList(client, mailbox)).some((p) => p.id === req.params.id)) throw new NotFoundError('App-Passwort');
+      if (ctx.accounts.list(req.user.id).some((a) => isManaged(a, req.params.instanceId) && String(a.config.appPasswordId) === req.params.id)) {
+        throw new BadRequestError('Dieses App-Passwort nutzt Kuvert für Ihr Postfach unter „Mails“. Entfernen Sie stattdessen das Konto unter Einstellungen → Konten.');
+      }
       await client.write('delete/app-passwd', [req.params.id]);
       audit.log('mailcow.app_password_deleted', { req, details: { mailbox, id: req.params.id } });
       return { ok: true };

@@ -116,6 +116,20 @@ export interface MailcowLink {
   instanceName?: string;
   mailbox: string;
   createdAt?: string;
+  /**
+   * Mailzugriff in Kuvert: 'managed' = vom Admin über ein App-Passwort eingerichtet,
+   * 'own' = vom Benutzer selbst eingerichtetes Konto, null = nur Self-Service
+   */
+  mailAccess?: 'managed' | 'own' | null;
+}
+
+/** Ergebnis von POST /mailcow/links */
+export interface MailcowLinkResult {
+  ok: true;
+  /** Konto in Kuvert (neu angelegt oder schon vorhanden) */
+  accountId: string | null;
+  accountCreated: boolean;
+  warnings: string[];
 }
 
 export interface MailcowLinkedMailbox {

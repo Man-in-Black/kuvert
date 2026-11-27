@@ -39,6 +39,16 @@ Kuvert spricht die [mailcow](https://mailcow.email)-API an und bietet:
     (der erfolgreiche IMAP-Login beweist den Besitz),
   - bei der Provisionierung,
   - manuell durch den Admin (*Verknüpfungen*).
+- Beim manuellen Verknüpfen kann der Admin das Postfach zusätzlich **unter „Mails“ einrichten**
+  (Häkchen beim Verknüpfen oder *Einrichten* bei einer bestehenden Verknüpfung). Kuvert legt dafür in
+  mailcow ein App-Passwort „Kuvert (E-Mail des Benutzers)“ mit IMAP-, SMTP- und DAV-Zugriff an, prüft den Login und
+  richtet damit ein `mailcow`-Konto ein – das Postfach-Passwort wird nicht benötigt und das App-Passwort nur
+  verschlüsselt gespeichert. Der Benutzer kann damit alle E-Mails lesen und als dieses Postfach senden.
+  - Löst der Admin die Verknüpfung, werden Konto und App-Passwort entfernt; die E-Mails bleiben im Postfach.
+  - Löscht der Benutzer das Konto selbst, löscht Kuvert das App-Passwort in mailcow ebenfalls.
+  - Unter *Mein Postfach* lässt sich dieses App-Passwort nicht löschen (stattdessen das Konto entfernen);
+    beim Ändern des Postfach-Passworts bleibt es gültig.
+  - Hat der Benutzer für das Postfach schon ein eigenes Konto, legt Kuvert kein zweites an.
 - Das Ändern des Postfach-Passworts erfordert das Kuvert-Passwort; die gespeicherten Zugangsdaten
   der eigenen Kuvert-Konten werden automatisch angepasst.
 - App-Passwörter werden in Kuvert erzeugt und **nur einmal** angezeigt, nicht gespeichert.

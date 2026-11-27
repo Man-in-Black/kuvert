@@ -1,7 +1,7 @@
 /**
- * Auswahlfeld mit Suche (für Projekte und Tätigkeiten). Die Liste schwebt per Portal über
- * allem (auch in Dialogen und der Seitenleiste), gruppiert nach `group` und durchsucht
- * Bezeichnung, Gruppe und `search` – bei Projekten also auch Kundenname und Nummern.
+ * Auswahlfeld mit Suche (z. B. Projekte und Tätigkeiten, Benutzer, Postfächer). Die Liste schwebt
+ * per Portal über allem (auch in Dialogen und der Seitenleiste), gruppiert nach `group` und
+ * durchsucht Bezeichnung, Gruppe und `search` – bei Projekten also auch Kundenname und Nummern.
  * Tastatur: Pfeile, Enter, Esc; Tippen auf dem geschlossenen Feld öffnet die Suche.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
@@ -34,6 +34,7 @@ export function Combobox({
   display,
   className,
   searchPlaceholder = 'Suchen …',
+  dots = true,
 }: {
   items: ComboItem[];
   value: string;
@@ -45,6 +46,8 @@ export function Combobox({
   display?: (item: ComboItem) => string;
   className?: string;
   searchPlaceholder?: string;
+  /** Farbpunkte vor den Einträgen anzeigen (aus bei Listen ohne Farben) */
+  dots?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -181,7 +184,7 @@ export function Combobox({
           className,
         )}
       >
-        {selected?.id && <ColorDot color={selected.color ?? undefined} />}
+        {dots && selected?.id && <ColorDot color={selected.color ?? undefined} />}
         <span className={cn('min-w-0 flex-1 truncate', !text && 'text-subtle')}>{text || placeholder}</span>
         <ChevronDown className="h-4 w-4 shrink-0 text-muted" />
       </button>
@@ -226,7 +229,7 @@ export function Combobox({
                         !it.id && 'text-muted',
                       )}
                     >
-                      {it.id ? <ColorDot color={it.color ?? undefined} /> : null}
+                      {dots && it.id ? <ColorDot color={it.color ?? undefined} /> : null}
                       <span className="min-w-0 flex-1 truncate">{it.label}</span>
                       {it.hint && <span className="shrink-0 text-xs text-muted">{it.hint}</span>}
                       {it.id === value && <Check className="h-4 w-4 shrink-0 text-primary" />}

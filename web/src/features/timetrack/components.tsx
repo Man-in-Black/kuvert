@@ -8,7 +8,7 @@ import { de } from 'date-fns/locale';
 import { MoreHorizontal, Pencil, Play, Plus, Square, Tag, Trash2 } from 'lucide-react';
 import type { TtEntry, TtEntryInput } from '@kuvert/shared';
 import { Badge, Button, Checkbox, ColorDot, Dropdown, EmptyState, Field, IconButton, Input, Modal, Textarea, useConfirm } from '@/components/ui';
-import { Combobox, type ComboItem } from './Combobox';
+import { Combobox, type ComboItem } from '@/components/ui/Combobox';
 import { cn } from '@/lib/utils';
 import { TimeRangeEditor, type TimeRangeValue } from './TimeRangeEditor';
 import { DayTimeline } from './DayTimeline';
