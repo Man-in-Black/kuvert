@@ -196,12 +196,17 @@ export class GoogleCalendarProvider implements CalendarProvider {
         const s = start.slice(0, 10);
         let e = (end ?? s).slice(0, 10);
         if (e <= s) e = addDays(s, 1);
-        body.start = { date: s };
-        body.end = { date: e };
+        // PATCH führt start/end mit dem Bestand zusammen: das jeweils andere Feld explizit
+        // leeren, sonst stehen beim Wechsel ganztägig ↔ Uhrzeit date UND dateTime im Termin
+        // und Google antwortet mit „Invalid start time.“
+        const clear = existing ? { dateTime: null, timeZone: null } : {};
+        body.start = { ...clear, date: s };
+        body.end = { ...clear, date: e };
       } else {
         end ??= new Date(new Date(start).getTime() + 3600_000).toISOString();
-        body.start = { dateTime: new Date(start).toISOString(), timeZone: input.timeZone };
-        body.end = { dateTime: new Date(end).toISOString(), timeZone: input.timeZone };
+        const clear = existing ? { date: null } : {};
+        body.start = { ...clear, dateTime: new Date(start).toISOString(), timeZone: input.timeZone };
+        body.end = { ...clear, dateTime: new Date(end).toISOString(), timeZone: input.timeZone };
       }
     }
     if (input.attendees !== undefined) {
