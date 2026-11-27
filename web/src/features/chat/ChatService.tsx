@@ -107,6 +107,8 @@ export function ChatService() {
     // Auch Tag der Systembenachrichtigung: "Verpasst" ersetzt die des Klingelns
     const toastId = `chat-call-${e.conversationId}`;
     if (!e.call) toast.dismiss(toastId);
+    // Kuvert-Anrufe (Kuvert-Chat) meldet das Modul meet selbst (Annehmen/Ablehnen in Kuvert)
+    if (!isExternal(e.conversationId)) return;
     if (!e.ring || !settings.notify) return;
     const conv = qc.getQueryData<ChatConversation[]>(chatKeys.conversations)?.find((c) => c.id === e.conversationId);
     if (conv?.muted) return;

@@ -13,6 +13,7 @@ import { getDb } from '../../core/db.js';
 import { AppError, BadRequestError, NotFoundError } from '../../core/errors.js';
 import { uploads } from '../../core/uploads.js';
 import { toUser, type UserRow } from '../../core/users.js';
+import { kuvertCalls } from './calls.js';
 
 const ISO_NOW = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`;
 
@@ -318,6 +319,7 @@ export const chatStore = {
       muted: !!r.muted,
       pinned: !!r.pinned,
       myRole: r.role,
+      call: kuvertCalls.get(r.id) ?? null,
     }));
   },
 
@@ -502,6 +504,12 @@ export const chatStore = {
       .prepare(`INSERT INTO chat_messages (id, conversation_id, user_id, kind, body, created_at) VALUES (?, ?, NULL, 'system', ?, ?)`)
       .run(id, conversationId, JSON.stringify(event), ts);
     db().prepare('UPDATE chat_conversations SET last_message_at = ? WHERE id = ?').run(ts, conversationId);
+    return this.message(id);
+  },
+
+  /** Systemnachricht nachträglich ändern (z. B. Anruf-Karte bei Anrufende) */
+  updateSystemMessage(id: string, event: ChatSystemEvent): ChatMessage {
+    db().prepare(`UPDATE chat_messages SET body = ? WHERE id = ? AND kind = 'system'`).run(JSON.stringify(event), id);
     return this.message(id);
   },
 

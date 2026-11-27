@@ -21,6 +21,7 @@ import chat from '@/features/chat/module';
 import triage from '@/features/triage/module';
 import threecx, { phoneModule } from '@/features/threecx/module';
 import timetrack from '@/features/timetrack/module';
+import meet, { meetAdminModule } from '@/features/meet/module';
 
 export const allModules: WebModule[] = [
   mail,
@@ -43,6 +44,8 @@ export const allModules: WebModule[] = [
   notifications,
   mailcow,
   threecx,
+  meet,
+  meetAdminModule,
 ];
 
 export function activeModules(ctx: ModuleActivationContext): WebModule[] {

@@ -1,7 +1,7 @@
 {
   "name": "kuvert",
   "private": true,
-  "version": "0.20.5",
+  "version": "1.0.0",
   "description": "Kuvert – modularer, selbst gehosteter Webmail-, Kalender-, Kontakte- und Aufgaben-Client",
   "workspaces": ["shared", "server", "web"],
   "scripts": {
@@ -12,5 +12,7 @@
     "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web",
     "start": "npm run start --workspace server"
   },
-  "engines": { "node": ">=22.12" }
+  "engines": { "node": ">=22.12" },
+  "//overrides": "Excalidraw bringt Radix-Pakete mit, die nur React 18 als Peer angeben – sonst landet React 18 zusätzlich im Bündel",
+  "overrides": { "react": "^19.3.1", "react-dom": "^19.3.1" }
 }

@@ -163,6 +163,41 @@ export interface AdminOverview {
   recentAudit: AuditEntry[];
 }
 
+/* ───────────────────────────── Module ein-/ausschalten ───────────────────────────── */
+
+/**
+ * Soll-Zustand eines Moduls (gilt ab dem nächsten Start):
+ * active = an · disabled = im Admin-Bereich abgeschaltet ·
+ * env = per KUVERT_MODULES/KUVERT_DISABLED_MODULES abgeschaltet (nicht schaltbar) ·
+ * unavailable = technisch nicht nutzbar (z. B. S/MIME ohne openssl)
+ */
+export type AdminModuleStatus = 'active' | 'disabled' | 'env' | 'unavailable';
+
+export interface AdminModuleState {
+  id: string;
+  name: string;
+  description?: string;
+  status: AdminModuleStatus;
+  /** Läuft gerade (beim letzten Start geladen) */
+  loaded: boolean;
+  /** Soll-Zustand weicht vom laufenden ab → wirkt nach dem Neustart */
+  pending: boolean;
+  /** Im Admin-Bereich schaltbar */
+  toggleable: boolean;
+  /** Kontotypen, die das Modul bereitstellt */
+  accountTypes: string[];
+  /** Verbundene Konten dieser Typen (Warnung beim Abschalten) */
+  accounts: number;
+}
+
+export interface AdminModulesView {
+  modules: AdminModuleState[];
+  /** Neustart aus der Oberfläche möglich (Container mit Restart-Richtlinie) */
+  restartable: boolean;
+  /** Mindestens eine Änderung wartet auf einen Neustart */
+  pending: boolean;
+}
+
 /* ───────────────────────────── Dienste (OAuth-Apps, KI) ───────────────────────────── */
 
 export type ServiceKey = 'microsoft' | 'google' | 'ai' | 'search';

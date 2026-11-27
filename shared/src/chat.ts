@@ -41,11 +41,14 @@ export interface ChatReaction {
 /** Ereignis einer Systemnachricht (wird im Client übersetzt) */
 export interface ChatSystemEvent {
   /** 'text' = fertiger Text eines verbundenen Dienstes (Mattermost, Talk, Teams) */
-  action: 'created' | 'added' | 'removed' | 'left' | 'renamed' | 'text';
+  /** 'call' = Kuvert-Anruf (Modul meet): wird als Anruf-Karte angezeigt */
+  action: 'created' | 'added' | 'removed' | 'left' | 'renamed' | 'text' | 'call';
   actorId: string;
   userIds?: string[];
   name?: string;
   text?: string;
+  /** Nur bei 'call' */
+  call?: ChatCallInfo;
 }
 
 export interface ChatMessage {
@@ -114,8 +117,10 @@ export interface ChatCallInfo {
   title?: string | null;
 }
 
-/** Laufender Anruf in einer Unterhaltung (Mattermost Calls) */
+/** Laufender Anruf in einer Unterhaltung (Mattermost Calls oder Kuvert-Anruf) */
 export interface ChatCall {
+  /** Kuvert-Anruf über LiveKit (Modul meet): Beitreten öffnet die Anruf-Ansicht in Kuvert */
+  kuvert?: boolean;
   startedAt: string;
   /** Wer den Anruf gestartet hat */
   ownerId: string | null;
@@ -222,7 +227,7 @@ export interface ChatConversation {
   memberCount?: number | null;
   /** Bekannte Personen der Unterhaltung, die keine Kuvert-Benutzer sind (Namen, Avatare, Online-Status) */
   participants?: ChatUser[];
-  /** Laufender Anruf (nur verbundene Dienste mit Anrufen) */
+  /** Laufender Anruf (verbundene Dienste mit Anrufen bzw. Kuvert-Anruf) */
   call?: ChatCall | null;
 }
 

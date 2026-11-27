@@ -20,7 +20,8 @@ import { AppError } from './core/errors.js';
 import { EventBus } from './core/events.js';
 import { Hooks } from './core/hooks.js';
 import { MailService } from './core/mail-service.js';
-import type { ModuleContext, ServerModule } from './core/module.js';
+import type { ModuleContext } from './core/module.js';
+import { envAllows, moduleAvailable, moduleSettings } from './core/module-settings.js';
 import { Registry } from './core/registry.js';
 import { uploads } from './core/uploads.js';
 import { sessions } from './core/users.js';
@@ -32,11 +33,6 @@ import { mailRoutes } from './routes/mail.js';
 import { pimRoutes } from './routes/pim.js';
 import { settingsRoutes } from './routes/settings.js';
 
-function moduleActive(mod: ServerModule): boolean {
-  if (config.enabledModules.length && !config.enabledModules.includes(mod.id)) return false;
-  if (config.disabledModules.includes(mod.id)) return false;
-  return mod.isEnabled ? mod.isEnabled() : true;
-}
 
 export async function buildServer(): Promise<{ app: FastifyInstance; ctx: ModuleContext }> {
   const pretty = process.env.NODE_ENV !== 'production' && process.stdout.isTTY;
@@ -59,15 +55,24 @@ export async function buildServer(): Promise<{ app: FastifyInstance; ctx: Module
 
   /* ───────────── Module laden ───────────── */
   const registry = new Registry();
-  for (const mod of allModules) {
-    if (!moduleActive(mod)) {
-      app.log.info(`Modul deaktiviert: ${mod.id}`);
+  const candidates = allModules.filter((mod) => {
+    if (!envAllows(mod)) app.log.info(`Modul per Umgebungsvariable deaktiviert: ${mod.id}`);
+    else if (!moduleAvailable(mod)) app.log.info(`Modul nicht verfügbar: ${mod.id}`);
+    else return true;
+    return false;
+  });
+  // Migrationen auch für im Admin-Bereich abgeschaltete Module: deren Tabellen bleiben so erhalten,
+  // und die Abschaltliste liegt selbst in der Datenbank (erst nach runMigrations lesbar).
+  for (const mod of candidates) for (const m of mod.migrations ?? []) registerMigration(m.id, m.sql);
+  runMigrations();
+  const adminDisabled = new Set(moduleSettings.disabled());
+  for (const mod of candidates) {
+    if (adminDisabled.has(mod.id)) {
+      app.log.info(`Modul im Admin-Bereich deaktiviert: ${mod.id}`);
       continue;
     }
     registry.add(mod);
-    for (const m of mod.migrations ?? []) registerMigration(m.id, m.sql);
   }
-  runMigrations();
   // Im Admin-Bereich gepflegte Dienst-Einstellungen (überschreiben .env)
   systemSettings.init();
 

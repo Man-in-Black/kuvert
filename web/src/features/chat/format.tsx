@@ -157,6 +157,10 @@ export function systemText(body: string, users: Map<string, ChatUser>, me: strin
       return `${actor} ${self ? 'hast' : 'hat'} die Gruppe verlassen`;
     case 'renamed':
       return `${actor} ${self ? 'hast' : 'hat'} die Gruppe in „${e.name ?? ''}“ umbenannt`;
+    case 'call':
+      if (!e.call?.endedAt) return '📞 Anruf läuft';
+      if (e.call.participantIds.length > 1) return '📞 Anruf';
+      return self ? '📞 Nicht angenommen' : '📞 Verpasster Anruf';
     default:
       return '';
   }

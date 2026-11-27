@@ -39,7 +39,7 @@ export default defineModule({
 ```
 
 Danach in `server/src/modules/index.ts` importieren und in `allModules` aufnehmen.
-Abschalten per Umgebungsvariable: `KUVERT_DISABLED_MODULES=hello`.
+Abschalten per Umgebungsvariable: `KUVERT_DISABLED_MODULES=hello` – oder ohne Neubau unter *Admin → Module* (wirkt nach Neustart).
 
 ### Kontext (`ModuleContext`)
 

@@ -1,8 +1,10 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowDown, ArrowLeft, Bell, BellOff, ExternalLink, Info, Phone, Star, Upload } from 'lucide-react';
+import { ArrowDown, ArrowLeft, Bell, BellOff, ExternalLink, Info, Phone, Star, Upload, Video } from 'lucide-react';
 import type { ChatCall, ChatConversation, ChatMessage, ChatUser } from '@kuvert/shared';
+import { useFeature } from '@/lib/queries';
+import { joinCall, useActiveCall } from '@/features/meet/store';
 import { Button, IconButton, Spinner, useConfirm } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -345,6 +347,12 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
   const canModerate = c.kind === 'group' && c.myRole === 'owner';
   // Anrufe laufen im Dienst selbst: Beitreten/Starten öffnet die Unterhaltung dort
   const callUrl = c.call?.joinUrl ?? c.source?.callUrl ?? c.source?.webUrl ?? null;
+  // Kuvert-Anrufe (Modul meet) nur im Kuvert-Chat; verbundene Dienste telefonieren im Dienst selbst
+  const meet = useFeature('meet') && !c.source;
+  const activeCall = useActiveCall();
+  const inThisCall = activeCall?.conversationId === c.id;
+  const kuvertCall = c.call?.kuvert ? c.call : null;
+  const onJoinCall = useCallback(() => void joinCall(c.id), [c.id]);
 
   return (
     <div
@@ -379,6 +387,22 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
             <span className={cn('block truncate text-xs', typingText ? 'text-primary' : 'text-muted')}>{typingText ?? subtitle}</span>
           </span>
         </button>
+        {meet && (
+          <>
+            <IconButton
+              label={inThisCall ? 'Zum Anruf' : kuvertCall ? 'Anruf beitreten' : 'Audioanruf starten'}
+              onClick={() => void joinCall(c.id)}
+              className={cn((kuvertCall || inThisCall) && 'text-success hover:text-success')}
+            >
+              <Phone className="h-[18px] w-[18px]" />
+            </IconButton>
+            {!kuvertCall && !inThisCall && (
+              <IconButton label="Videoanruf starten" onClick={() => void joinCall(c.id, { video: true })}>
+                <Video className="h-[18px] w-[18px]" />
+              </IconButton>
+            )}
+          </>
+        )}
         {caps.calls && callUrl && (
           <IconButton
             label={c.call ? 'Anruf beitreten' : `Anruf in ${c.source ? sourceShort(c.source.type) : 'Mattermost'} starten`}
@@ -408,7 +432,16 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
         </IconButton>
       </header>
 
-      {c.call && <CallBanner call={c.call} users={users} me={me} joinUrl={callUrl} service={c.source?.label ?? 'Mattermost'} />}
+      {c.call && !inThisCall && (
+        <CallBanner
+          call={c.call}
+          users={users}
+          me={me}
+          joinUrl={kuvertCall ? null : callUrl}
+          onJoin={kuvertCall && meet ? onJoinCall : undefined}
+          service={c.source?.label ?? 'Mattermost'}
+        />
+      )}
 
       {/* Verlauf */}
       <div className="relative min-h-0 flex-1">
@@ -482,7 +515,8 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
                           onReact={onReact}
                           onJump={onJump}
                           onMediaLoad={onMediaLoad}
-                          callJoinUrl={c.call ? callUrl : null}
+                          callJoinUrl={c.call && !kuvertCall ? callUrl : null}
+                          onJoinCall={kuvertCall && meet ? onJoinCall : undefined}
                         />
                       </Fragment>
                     );
@@ -536,7 +570,22 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
 }
 
 /** Hinweis auf einen laufenden Anruf mit Teilnehmenden und "Beitreten" */
-function CallBanner({ call, users, me, joinUrl, service }: { call: ChatCall; users: Map<string, ChatUser>; me?: string; joinUrl: string | null; service: string }) {
+function CallBanner({
+  call,
+  users,
+  me,
+  joinUrl,
+  onJoin,
+  service,
+}: {
+  call: ChatCall;
+  users: Map<string, ChatUser>;
+  me?: string;
+  joinUrl: string | null;
+  /** Kuvert-Anruf: in Kuvert beitreten */
+  onJoin?: () => void;
+  service: string;
+}) {
   const names = call.participantIds.map((id) => userName(id, users, me).split(' ')[0]!);
   const who = names.length ? (names.length > 3 ? `${names.slice(0, 3).join(', ')} und ${names.length - 3} weitere` : names.join(', ')) : null;
   return (
@@ -550,7 +599,11 @@ function CallBanner({ call, users, me, joinUrl, service }: { call: ChatCall; use
         <span className="text-muted"> · seit {timeOf(call.startedAt)}</span>
         {who && <span className="block truncate text-xs text-muted">Dabei: {who}</span>}
       </span>
-      {joinUrl && (
+      {onJoin ? (
+        <Button size="sm" variant="primary" icon={<Phone className="h-4 w-4" />} onClick={onJoin}>
+          Beitreten
+        </Button>
+      ) : joinUrl && (
         <Button size="sm" variant="primary" icon={<Phone className="h-4 w-4" />} onClick={() => window.open(joinUrl, '_blank', 'noopener,noreferrer')} title={`Öffnet den Anruf in ${service}`}>
           Beitreten
         </Button>

@@ -48,6 +48,31 @@ services:
     #           count: all
     #           capabilities: [gpu]
 
+  # Anrufe im Team-Chat (optional, Audio/Video/Bildschirm/Whiteboard):
+  #   LIVEKIT_URL, LIVEKIT_API_KEY und LIVEKIT_API_SECRET in der .env setzen, dann
+  #   docker compose --profile meet up -d
+  # Die Signalisierung läuft über Kuvert (wss://<kuvert>/api/meet/lk); für die Medien müssen
+  # TCP 7881 und UDP 7882 von außen erreichbar sein (Firewall/Portweiterleitung).
+  livekit:
+    image: livekit/livekit-server:v1.13
+    container_name: kuvert-livekit
+    profiles: ["meet"]
+    restart: unless-stopped
+    ports:
+      - "7881:7881"
+      - "7882:7882/udp"
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        log_level: info
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          # Öffentliche IP per STUN ermitteln (hinter NAT); bei fester IP stattdessen node_ip setzen
+          use_external_ip: true
+        keys:
+          ${LIVEKIT_API_KEY:-kuvert}: ${LIVEKIT_API_SECRET:-}
+
 volumes:
   kuvert-data:
   meili-data:

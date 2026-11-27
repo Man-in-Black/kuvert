@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { BookOpen, Boxes, Cpu, Link2, Server, Variable } from 'lucide-react';
 import { useAppInfo } from '@/lib/queries';
 import { Badge, Button, Card, CodeBox, PageHeader } from '@/components/ui';
@@ -9,11 +10,13 @@ const ENV_HINTS: { name: string; desc: string }[] = [
   { name: 'GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET', desc: 'Google – Vorgabe, auch unter „Dienste & Anmeldung“ einstellbar' },
   { name: 'AI_BACKEND / AI_BASE_URL / AI_MODEL', desc: 'KI-Assistent – Vorgabe, auch unter „Dienste & Anmeldung“ einstellbar' },
   { name: 'VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY', desc: 'Web Push (leer = automatisch erzeugt)' },
-  { name: 'KUVERT_MODULES / KUVERT_DISABLED_MODULES', desc: 'Module gezielt ein-/ausschalten' },
+  { name: 'KUVERT_MODULES / KUVERT_DISABLED_MODULES', desc: 'Module fest ein-/ausschalten (Vorrang vor „Module“ im Admin-Bereich)' },
+  { name: 'KUVERT_RESTARTABLE', desc: 'Neustart aus der Oberfläche erlauben (true/false, Standard: nur im Container)' },
   { name: 'POLL_INTERVAL / UPLOAD_MAX_MB', desc: 'Abrufintervall (s) und maximale Upload-Größe' },
 ];
 
 export function SystemSection() {
+  const navigate = useNavigate();
   const { data: app } = useAppInfo();
   if (!app) return null;
   const redirect = `${app.publicUrl}/api/oauth/callback`;
@@ -47,7 +50,16 @@ export function SystemSection() {
       </Card>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card icon={<Boxes />} title="Aktive Module" bodyClassName="p-0 pt-2">
+        <Card
+          icon={<Boxes />}
+          title="Aktive Module"
+          bodyClassName="p-0 pt-2"
+          actions={
+            <Button size="sm" variant="ghost" onClick={() => navigate('/admin/modules')}>
+              Verwalten
+            </Button>
+          }
+        >
           <ul className="divide-y divide-border">
             {app.modules.map((m) => (
               <li key={m.id} className="px-5 py-2.5">

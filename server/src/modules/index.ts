@@ -17,5 +17,6 @@ import chat from './chat/index.js';
 import triage from './triage/index.js';
 import threecx from './threecx/index.js';
 import timetrack from './timetrack/index.js';
+import meet from './meet/index.js';
 
-export const allModules: ServerModule[] = [microsoft, google, imap, dav, smime, ai, notifications, mailcow, mailarchiver, search, chat, triage, threecx, timetrack];
+export const allModules: ServerModule[] = [microsoft, google, imap, dav, smime, ai, notifications, mailcow, mailarchiver, search, chat, triage, threecx, timetrack, meet];

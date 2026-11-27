@@ -9,6 +9,8 @@ import { audit } from '../core/audit.js';
 import { getDb } from '../core/db.js';
 import { AppError, BadRequestError } from '../core/errors.js';
 import type { ModuleContext } from '../core/module.js';
+import { envAllows, moduleAvailable, moduleSettings, restartable } from '../core/module-settings.js';
+import { allModules } from '../modules/index.js';
 import { policies } from '../core/policies.js';
 import { apiTokens } from '../core/tokens.js';
 import { sessions, users } from '../core/users.js';
@@ -170,6 +172,49 @@ export async function adminRoutes(app: FastifyInstance, ctx: ModuleContext) {
 
   /** Alle Kontotypen (auch nicht erlaubte) – für den Richtlinien-Editor */
   app.get('/api/admin/account-types', async () => ctx.registry.listAccountTypes());
+
+  /* ───────────── Module ein-/ausschalten (wirkt nach Neustart) ───────────── */
+
+  const modulesView = () => moduleSettings.view(allModules, new Set(ctx.registry.modules.map((m) => m.id)));
+
+  app.get('/api/admin/modules', async () => modulesView());
+
+  app.put<{ Params: { id: string } }>('/api/admin/modules/:id', async (req) => {
+    const { enabled } = parse(z.object({ enabled: z.boolean() }), req.body);
+    const mod = allModules.find((m) => m.id === req.params.id);
+    if (!mod) throw new AppError(404, 'not_found', 'Unbekanntes Modul');
+    if (!envAllows(mod)) {
+      throw new AppError(409, 'module_env_locked', 'Dieses Modul ist per Umgebungsvariable (KUVERT_MODULES/KUVERT_DISABLED_MODULES) festgelegt');
+    }
+    if (!moduleAvailable(mod)) throw new AppError(409, 'module_unavailable', 'Dieses Modul ist auf diesem Server nicht verfügbar');
+    const wasEnabled = !moduleSettings.disabled().includes(mod.id);
+    if (wasEnabled !== enabled) {
+      moduleSettings.setEnabled(mod.id, enabled);
+      audit.log(enabled ? 'admin.module_enabled' : 'admin.module_disabled', { req, details: { module: mod.id, name: mod.name } });
+    }
+    return modulesView();
+  });
+
+  /** Neustart (nur im Container: die Restart-Richtlinie startet Kuvert danach wieder) */
+  app.post('/api/admin/restart', async (req, reply) => {
+    if (!restartable()) {
+      throw new AppError(409, 'restart_unavailable', 'Kuvert kann hier nicht selbst neu starten – bitte den Dienst bzw. Container neu starten');
+    }
+    audit.log('admin.restart', { req });
+    req.log.warn('Neustart aus dem Admin-Bereich angefordert');
+    // Erst antworten, dann sauber herunterfahren
+    reply.raw.once('finish', () => {
+      setTimeout(() => {
+        // Offene Echtzeit-Verbindungen (SSE) halten app.close() auf – spätestens nach 5 s beenden
+        setTimeout(() => process.exit(0), 5_000).unref();
+        void app
+          .close()
+          .catch(() => undefined)
+          .finally(() => process.exit(0));
+      }, 250);
+    });
+    return { ok: true };
+  });
 
   /* ───────────── Dienste: Microsoft/Google-App, KI-Backend ───────────── */
 

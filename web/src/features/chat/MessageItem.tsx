@@ -9,7 +9,7 @@ import { ZoomableImage } from '@/components/ZoomableImage';
 import { cn, formatSize } from '@/lib/utils';
 import { FULL_CAPS, fileUrl, userName } from './api';
 import { EmojiGrid, Popover, UserAvatar } from './components';
-import { bodyOf, isEmojiOnly, previewOf, renderBody, systemText, timeOf } from './format';
+import { bodyOf, isEmojiOnly, parseSystem, previewOf, renderBody, systemText, timeOf } from './format';
 
 export interface MessageItemProps {
   message: ChatMessage;
@@ -33,6 +33,8 @@ export interface MessageItemProps {
   onMediaLoad(): void;
   /** Laufender Anruf der Unterhaltung: dorthin führt "Beitreten" auf der Anruf-Karte */
   callJoinUrl?: string | null;
+  /** Laufender Kuvert-Anruf: "Beitreten" öffnet den Anruf in Kuvert */
+  onJoinCall?: () => void;
 }
 
 const isImage = (a: ChatAttachment) => a.contentType.startsWith('image/') && !a.contentType.includes('svg');
@@ -43,7 +45,11 @@ function MessageItemImpl(p: MessageItemProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [lightbox, setLightbox] = useState<ChatAttachment | null>(null);
 
-  if (m.kind === 'system') {
+  // Kuvert-Anrufe stehen als Systemnachricht im Verlauf und erscheinen wie Anruf-Beiträge verbundener Dienste
+  const sys = m.kind === 'system' ? parseSystem(m.body) : null;
+  const sysCall = sys?.action === 'call' ? sys.call : undefined;
+
+  if (m.kind === 'system' && !sysCall) {
     return (
       <div className="my-2 flex justify-center px-4">
         <span className="rounded-full bg-surface-2 px-3 py-1 text-center text-xs text-muted ring-1 ring-border">{systemText(m.body, users, me)}</span>
@@ -51,11 +57,16 @@ function MessageItemImpl(p: MessageItemProps) {
     );
   }
 
-  if (m.call) {
-    const call = m.call;
-    const ongoing = !call.endedAt;
-    const starter = m.senderId === me ? 'dir' : (m.senderId ? users.get(m.senderId)?.name : undefined) ?? m.senderName ?? 'jemandem';
+  const anyCall = m.call ?? sysCall;
+  if (anyCall) {
+    const call = anyCall;
+    // Kuvert-Anruf ohne Ende, aber nicht mehr aktiv (z. B. Server-Neustart): als beendet zeigen
+    const ongoing = !call.endedAt && (!sysCall || !!p.onJoinCall);
+    const starterId = m.senderId ?? sys?.actorId ?? null;
+    const starter = starterId === me ? 'dir' : (starterId ? users.get(starterId)?.name : undefined) ?? m.senderName ?? 'jemandem';
     const count = call.participantIds.length;
+    const missed = !!sysCall && !!call.endedAt && count <= 1;
+    const join = p.onJoinCall ?? (p.callJoinUrl ? () => window.open(p.callJoinUrl!, '_blank', 'noopener,noreferrer') : null);
     return (
       <div id={`msg-${m.id}`} className="my-2 flex justify-center px-4">
         <div className={cn('flex max-w-full items-center gap-3 rounded-xl border px-3 py-2 text-sm shadow-soft', ongoing ? 'border-success/40 bg-success/5' : 'border-border bg-surface')}>
@@ -63,17 +74,17 @@ function MessageItemImpl(p: MessageItemProps) {
             {ongoing ? <Phone className="h-4 w-4" /> : <PhoneOff className="h-4 w-4" />}
           </span>
           <span className="min-w-0">
-            <span className="block truncate font-medium">{call.title ?? (ongoing ? 'Anruf läuft' : 'Anruf beendet')}</span>
+            <span className="block truncate font-medium">{call.title ?? (ongoing ? 'Anruf läuft' : missed ? (starterId === me ? 'Nicht angenommen' : 'Verpasster Anruf') : 'Anruf beendet')}</span>
             <span className="block truncate text-xs text-muted">
               Gestartet von {starter} um {timeOf(call.startedAt)}
-              {call.endedAt && ` · ${callDuration(call.startedAt, call.endedAt)}`}
+              {call.endedAt && !missed && ` · ${callDuration(call.startedAt, call.endedAt)}`}
               {count > 0 && ` · ${count} ${count === 1 ? 'Person' : 'Personen'}`}
             </span>
           </span>
-          {ongoing && p.callJoinUrl && (
+          {ongoing && join && (
             <button
               type="button"
-              onClick={() => window.open(p.callJoinUrl!, '_blank', 'noopener,noreferrer')}
+              onClick={join}
               className="shrink-0 rounded-lg bg-success px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
             >
               Beitreten

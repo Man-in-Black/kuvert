@@ -4,7 +4,7 @@
 für Microsoft 365, Google Workspace/Gmail, IMAP/SMTP, CalDAV/CardDAV und Nextcloud.
 Mit gemeinsamem Posteingang, überlagerten Kalendern, S/MIME, Teams/Meet-Meetings,
 lokalem KI-Assistenten (Ollama), Push-Benachrichtigungen, Mehrbenutzer- und Admin-Bereich,
-Zwei-Faktor-Anmeldung, REST-API mit Webhooks sowie mailcow-, Mail-Archiver- und 3CX-Anbindung.
+Zwei-Faktor-Anmeldung, REST-API mit Webhooks, Team-Chat mit Audio-/Videoanrufen sowie mailcow-, Mail-Archiver- und 3CX-Anbindung.
 Läuft als ein Docker-Container.
 
 ---
@@ -33,6 +33,7 @@ Läuft als ein Docker-Container.
 | **API** | REST-API für alle Funktionen, persönliche **API-Tokens** mit Scopes (read/write/admin), interaktive Doku (OpenAPI/Swagger) unter `/api/docs`, **Webhooks** mit HMAC-Signatur (z. B. für n8n, Node-RED) |
 | **mailcow** | Admin: Postfächer, Domains, Aliasse, Quarantäne, Provisionierung (Postfach + Kuvert-Konto in einem Schritt). Benutzer: Kontingent, Wegwerf-Adressen, App-Passwörter, Quarantäne, Passwort ändern. Kontotyp „mailcow“ richtet IMAP/SMTP + SOGo-Kalender/Kontakte automatisch ein |
 | **Team-Chat** | Direktnachrichten und Gruppen zwischen Kuvert-Benutzern in Echtzeit (SSE): WYSIWYG-Eingabe mit Markdown-Kürzeln, @-Erwähnungen (Personen, @all), Dateien & Bilder, Antworten, Reaktionen, Bearbeiten/Löschen, Lesebestätigungen, „schreibt …“, Online-Status, Suche, Stummschalten/Anheften, Web Push, Webhook `chat.message`; zusätzlich **Mattermost, Nextcloud Talk und Microsoft Teams** in derselben Oberfläche |
+| **Anrufe** | Audio- und Videoanrufe im Team-Chat (direkt und in Gruppen) über einen selbst gehosteten LiveKit-Server: **Bildschirmfreigabe**, gemeinsames **Whiteboard** (Excalidraw, als Bild in den Chat stellbar), Klingeln mit Annehmen/Ablehnen, Web Push, verpasste Anrufe mit „Zurückrufen“, Anruf-Karte mit Dauer im Verlauf, verkleinerbares Anruf-Fenster |
 | **Mail-Archiver** | Archiv durchsuchen (Volltext, Zeitraum, Konto, Ordner), Mails lesen, Anhänge/.eml laden, aus dem Archiv weiterleiten oder antworten – per persönlichem API-Schlüssel |
 | **3CX** | Click-to-Call über die eigene Nebenstelle (3CX V20): Klick auf eine Telefonnummer startet den Anruf; eingehende Anrufe in Echtzeit mit Namen aus den Kontakten, verpasste mit „Zurückrufen“; Bereich **Telefon** mit Wahlfeld, laufendem Gespräch (Auflegen), eigenem Status, Anrufliste, 3CX-Telefonbuch und Kollegen mit Status; Zuordnung der Nebenstellen durch den Admin – auch automatisch per E-Mail-Adresse |
 | **Zeiterfassung** | Timer mit Start/Stopp – auch mehrere gleichzeitig, laufende Timer links im Menü sichtbar (links als Bereich **Zeiterfassung**, rechts als Panel in der Seitenleiste), Aufrunden auf 15 Minuten (einstellbar), Projektsuche auch nach Kunden, Zeiten nachtragen und bearbeiten (Dauer direkt, ±15 min, Zeitleiste), Wochen-/Monats-/Jahresansicht mit Tagessummen, gemeinsame Kunden → Projekte → Tätigkeiten mit Stundensätzen, Schlagworte, Auswertung mit Beträgen und CSV-Export; **Import aus Kimai 2** (API-Token oder API-Passwort, wiederholbar ohne Dubletten) |
@@ -89,12 +90,17 @@ location / {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_buffering off;              # wichtig für /api/events (SSE) und KI-Streaming
+    proxy_http_version 1.1;           # WebSockets für Anrufe (/api/meet/lk)
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
     proxy_read_timeout 1h;
     client_max_body_size 50m;
 }
 ```
 
-Caddy: `kuvert.example.com { reverse_proxy 127.0.0.1:8080 { flush_interval -1 } }`
+`$connection_upgrade` braucht im `http`-Block: `map $http_upgrade $connection_upgrade { default upgrade; '' close; }`.
+
+Caddy: `kuvert.example.com { reverse_proxy 127.0.0.1:8080 { flush_interval -1 } }` (WebSockets ohne weitere Angaben)
 
 ---
 
@@ -270,6 +276,10 @@ oder per Mehrfachauswahl → „Mit KI einordnen“.
   alle verpflichtend gemacht werden – Benutzer ohne 2FA werden dann nach dem Login durch die Einrichtung geführt.
 - **Audit-Log:** Anmeldungen (auch fehlgeschlagene), 2FA-Änderungen, Admin-Aktionen, Tokens und Konten werden
   protokolliert (Aufbewahrung 365 Tage).
+- **Module:** Unter *Admin → Module* lassen sich Module ein- und ausschalten (z. B. Chat, Anrufe, KI-Triage, 3CX).
+  Die Änderung wirkt nach einem Neustart – im Docker-Container direkt per Knopf „Jetzt neu starten“
+  (die Restart-Richtlinie startet Kuvert wieder). Per `KUVERT_MODULES`/`KUVERT_DISABLED_MODULES` festgelegte
+  Module sind dort nicht schaltbar.
 
 ## REST-API & Webhooks
 
@@ -314,6 +324,28 @@ seine Mattermost- bzw. Talk-Konten sowie die Teams-Chats eines Microsoft-365-Kon
 Chat-Liste (mit Kennzeichnung und Filter) und lassen sich dort lesen und beantworten – inkl. Antworten, Reaktionen,
 Bearbeiten/Löschen, Dateien, Suche und neuer Unterhaltungen. Details: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md#mattermost-nextcloud-talk--teams-im-chat).
 Nur die Anbindungen abschalten: `CHAT_BRIDGES=false`.
+
+### Anrufe (Audio, Video, Bildschirm, Whiteboard)
+
+In Kuvert-Unterhaltungen starten die Knöpfe 📞/🎥 im Kopf einen Anruf; die anderen Mitglieder klingeln (mit Web Push)
+und nehmen per Klick an. Im Anruf: Mikrofon/Kamera samt Geräteauswahl, **Bildschirm freigeben**, gemeinsames
+**Whiteboard** (Excalidraw – alle zeichnen gleichzeitig, Mauszeiger der anderen sichtbar, „In den Chat“ stellt die
+Zeichnung als Bild in die Unterhaltung) und Verkleinern, um Kuvert währenddessen weiter zu benutzen.
+Direktanrufe enden nach 45 s ohne Antwort; wer nicht dabei war, sieht „Verpasster Anruf“ mit „Zurückrufen“.
+
+Audio und Video laufen über einen eigenen **LiveKit-Server** (Open Source, SFU – auch für größere Gruppen):
+
+```bash
+# .env: LIVEKIT_URL=http://livekit:7880, LIVEKIT_API_KEY=kuvert, LIVEKIT_API_SECRET=$(openssl rand -hex 32)
+docker compose --profile meet up -d
+```
+
+Die Signalisierung reicht Kuvert unter `wss://<kuvert>/api/meet/lk` an LiveKit durch – LiveKit braucht also keine
+eigene Domain und kein Zertifikat, der Reverse Proxy muss aber **WebSockets** weiterleiten (nginx:
+`proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $connection_upgrade;`).
+Für die Medien müssen **TCP 7881 und UDP 7882** von außen erreichbar sein. Alternativ lässt sich unter
+*Admin → Anrufe* eine eigene LiveKit-Adresse für Browser eintragen. Dort auch: Verbindungstest, Bildschirmfreigabe und
+Whiteboard an/aus. Anrufe gibt es nur in Kuvert-Unterhaltungen; Mattermost/Talk/Teams telefonieren weiter im Dienst.
 
 ## Suche
 
@@ -435,7 +467,8 @@ Alle Variablen mit Erklärung: [`.env.example`](.env.example). Die wichtigsten:
 | `GOOGLE_PLACES_API_KEY` | Optional: Ortssuche im Termin-Dialog über die Google Places API (New), auch im Admin-Bereich einstellbar |
 | `AI_BACKEND` / `AI_BASE_URL` / `AI_MODEL` | KI-Assistent (Vorgabe, auch im Admin-Bereich einstellbar) |
 | `AI_TRIAGE_CONCURRENCY` / `AI_TRIAGE_RETENTION_DAYS` | KI-Triage: gleichzeitige Einordnungen (Standard 1), Aufbewahrung in Tagen (Standard 180) |
-| `KUVERT_MODULES` / `KUVERT_DISABLED_MODULES` | Module ein-/ausschalten |
+| `KUVERT_MODULES` / `KUVERT_DISABLED_MODULES` | Module ein-/ausschalten (haben Vorrang vor *Admin → Module*) |
+| `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Anrufe im Chat über LiveKit (Vorgabe, auch unter *Admin → Anrufe*); `LIVEKIT_PUBLIC_URL` optional |
 | `CHAT_BRIDGES` | `false` schaltet die Anbindung von Mattermost/Nextcloud Talk/Teams im Chat ab |
 | `ALLOW_REGISTRATION` | Selbstregistrierung erlauben |
 
