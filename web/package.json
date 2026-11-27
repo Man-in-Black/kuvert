@@ -1,6 +1,6 @@
 {
   "name": "@kuvert/web",
-  "version": "0.20.2",
+  "version": "0.20.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,7 +17,7 @@
     "@fullcalendar/list": "^6.1.22",
     "@fullcalendar/react": "^6.1.22",
     "@fullcalendar/timegrid": "^6.1.22",
-    "@kuvert/shared": "0.20.2",
+    "@kuvert/shared": "0.20.3",
     "@tanstack/react-query": "^5.108.4",
     "@tiptap/extension-color": "^3.35.0",
     "@tiptap/extension-font-family": "^3.35.0",

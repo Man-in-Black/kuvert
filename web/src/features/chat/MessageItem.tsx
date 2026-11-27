@@ -4,7 +4,7 @@ import { de } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { Check, CheckCheck, Copy, Download, File as FileIcon, MoreHorizontal, Pencil, Phone, PhoneOff, Reply, SmilePlus, Trash2 } from 'lucide-react';
 import { CHAT_QUICK_REACTIONS, type ChatAttachment, type ChatCapabilities, type ChatCard, type ChatMessage, type ChatUser } from '@kuvert/shared';
-import { Dropdown, Modal } from '@/components/ui';
+import { Modal } from '@/components/ui';
 import { ZoomableImage } from '@/components/ZoomableImage';
 import { cn, formatSize } from '@/lib/utils';
 import { FULL_CAPS, fileUrl, userName } from './api';
@@ -40,6 +40,7 @@ const isImage = (a: ChatAttachment) => a.contentType.startsWith('image/') && !a.
 function MessageItemImpl(p: MessageItemProps) {
   const { message: m, me, users } = p;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [lightbox, setLightbox] = useState<ChatAttachment | null>(null);
 
   if (m.kind === 'system') {
@@ -103,6 +104,14 @@ function MessageItemImpl(p: MessageItemProps) {
     }
   };
 
+  type ActionItem = { divider?: false; label: string; icon: ReactNode; danger?: boolean; onClick: () => void } | { divider: true };
+  const menuItems: ActionItem[] = [
+    ...(caps.reply ? [{ label: 'Antworten', icon: <Reply />, onClick: () => p.onReply(m) }] : []),
+    ...(bodyOf(m) ? [{ label: 'Text kopieren', icon: <Copy />, onClick: () => void copy() }] : []),
+    ...(mine && caps.edit ? [{ label: 'Bearbeiten', icon: <Pencil />, onClick: () => p.onEdit(m) }] : []),
+    ...(canDelete ? [{ divider: true as const }, { label: 'Löschen', icon: <Trash2 />, danger: true, onClick: () => p.onDelete(m) }] : []),
+  ];
+
   const time = (
     <span className={cn('ml-2 inline-flex translate-y-1 select-none items-center gap-1 whitespace-nowrap text-[10.5px] leading-none', mine && !emojiOnly ? 'text-primary-fg/75' : 'text-subtle', 'float-right')}>
       {m.editedAt && !m.deleted && <span>bearbeitet</span>}
@@ -129,90 +138,169 @@ function MessageItemImpl(p: MessageItemProps) {
           </div>
         )}
 
-        <div
-          tabIndex={0}
-          className={cn(
-            'relative min-w-0 max-w-full break-words text-[14px] leading-[1.45] outline-none transition-shadow [overflow-wrap:anywhere]',
-            emojiOnly
-              ? 'text-[40px] leading-tight'
-              : cn(
-                  'rounded-2xl px-3 py-1.5',
-                  mine ? 'bg-primary text-primary-fg' : 'border border-border bg-surface text-fg shadow-soft',
-                  p.first && (mine ? 'rounded-tr-md' : 'rounded-tl-md'),
-                ),
-            m.deleted && 'italic opacity-70',
-            p.highlighted && 'ring-2 ring-warning ring-offset-2 ring-offset-bg',
-          )}
-        >
-          {m.replyTo && (
-            <button
-              type="button"
-              onClick={() => p.onJump(m.replyTo!.id)}
+        <div className="relative min-w-0 max-w-full">
+          <div
+            tabIndex={0}
+            className={cn(
+              'relative min-w-0 max-w-full break-words text-[14px] leading-[1.45] outline-none transition-shadow [overflow-wrap:anywhere]',
+              emojiOnly
+                ? 'text-[40px] leading-tight'
+                : cn(
+                    'rounded-2xl px-3 py-1.5',
+                    mine ? 'bg-primary text-primary-fg' : 'border border-border bg-surface text-fg shadow-soft',
+                    p.first && (mine ? 'rounded-tr-md' : 'rounded-tl-md'),
+                  ),
+              m.deleted && 'italic opacity-70',
+              p.highlighted && 'ring-2 ring-warning ring-offset-2 ring-offset-bg',
+            )}
+          >
+            {m.replyTo && (
+              <button
+                type="button"
+                onClick={() => p.onJump(m.replyTo!.id)}
+                className={cn(
+                  'mb-1 mt-0.5 block w-full max-w-full rounded-md border-l-[3px] px-2 py-1 text-left text-xs',
+                  mine ? 'border-primary-fg/60 bg-black/10' : 'border-primary bg-surface-2',
+                )}
+              >
+                <span className="block font-semibold">{userName(m.replyTo.senderId, users, me)}</span>
+                <span className="line-clamp-2 opacity-80">
+                  {m.replyTo.deleted ? 'Gelöschte Nachricht' : previewOf(m.replyTo.body, m.replyTo.hasAttachments ? 1 : 0) || '…'}
+                </span>
+              </button>
+            )}
+
+            {images.length > 0 && (
+              <div className={cn('my-1 grid gap-1', images.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
+                {images.map((a) => (
+                  <button key={a.id} type="button" onClick={() => setLightbox(a)} className="block overflow-hidden rounded-lg bg-black/5" title={a.filename}>
+                    <img
+                      src={fileUrl(a.id, true)}
+                      alt={a.filename}
+                      loading="lazy"
+                      onLoad={p.onMediaLoad}
+                      className={cn('block w-full object-cover', images.length > 1 ? 'aspect-square max-w-[180px]' : 'max-h-72 max-w-[320px]')}
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {files.length > 0 && (
+              <div className="my-1 flex flex-col gap-1">
+                {files.map((a) => (
+                  <a
+                    key={a.id}
+                    href={fileUrl(a.id)}
+                    download={a.filename}
+                    className={cn(
+                      'flex min-w-0 max-w-[320px] items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
+                      mine ? 'bg-black/10 hover:bg-black/20' : 'bg-surface-2 hover:bg-hover',
+                    )}
+                  >
+                    <FileIcon className="h-5 w-5 shrink-0 opacity-80" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium not-italic">{a.filename}</span>
+                      <span className="block text-[11px] opacity-70">{formatSize(a.size)}</span>
+                    </span>
+                    <Download className="h-4 w-4 shrink-0 opacity-70" />
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {m.deleted ? (
+              <span>Diese Nachricht wurde gelöscht</span>
+            ) : (
+              m.body && <span className="whitespace-pre-wrap">{renderBody(m.body)}</span>
+            )}
+            {cards.length > 0 && (
+              <div className={cn('flex flex-col gap-1.5', m.body.trim() ? 'mb-1 mt-1.5' : 'my-1')}>
+                {cards.map((c, i) => (
+                  <MessageCard key={i} card={c} mine={mine} onMediaLoad={p.onMediaLoad} />
+                ))}
+              </div>
+            )}
+            {!emojiOnly && time}
+            {emojiOnly && <span className="ml-1 align-bottom text-[10.5px] text-subtle">{timeOf(m.createdAt)}</span>}
+          </div>
+          {/* Aktionen bei Hover/Fokus – an der Blase, leicht nach oben versetzt */}
+          {!m.deleted && (
+            <div
               className={cn(
-                'mb-1 mt-0.5 block w-full max-w-full rounded-md border-l-[3px] px-2 py-1 text-left text-xs',
-                mine ? 'border-primary-fg/60 bg-black/10' : 'border-primary bg-surface-2',
+                'absolute -top-6 z-10 hidden w-max items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5 shadow-pop group-focus-within:flex group-hover:flex',
+                mine ? 'right-2' : 'left-2',
+                (pickerOpen || menuOpen) && 'flex',
               )}
             >
-              <span className="block font-semibold">{userName(m.replyTo.senderId, users, me)}</span>
-              <span className="line-clamp-2 opacity-80">
-                {m.replyTo.deleted ? 'Gelöschte Nachricht' : previewOf(m.replyTo.body, m.replyTo.hasAttachments ? 1 : 0) || '…'}
-              </span>
-            </button>
-          )}
-
-          {images.length > 0 && (
-            <div className={cn('my-1 grid gap-1', images.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
-              {images.map((a) => (
-                <button key={a.id} type="button" onClick={() => setLightbox(a)} className="block overflow-hidden rounded-lg bg-black/5" title={a.filename}>
-                  <img
-                    src={fileUrl(a.id, true)}
-                    alt={a.filename}
-                    loading="lazy"
-                    onLoad={p.onMediaLoad}
-                    className={cn('block w-full object-cover', images.length > 1 ? 'aspect-square max-w-[180px]' : 'max-h-72 max-w-[320px]')}
-                  />
+              {caps.react && CHAT_QUICK_REACTIONS.slice(0, 3).map((e) => (
+                <button key={e} type="button" onClick={() => p.onReact(m, e)} className="flex h-7 w-7 items-center justify-center rounded-md text-base hover:bg-hover" title={`Mit ${e} reagieren`}>
+                  {e}
                 </button>
               ))}
-            </div>
-          )}
-
-          {files.length > 0 && (
-            <div className="my-1 flex flex-col gap-1">
-              {files.map((a) => (
-                <a
-                  key={a.id}
-                  href={fileUrl(a.id)}
-                  download={a.filename}
-                  className={cn(
-                    'flex min-w-0 max-w-[320px] items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
-                    mine ? 'bg-black/10 hover:bg-black/20' : 'bg-surface-2 hover:bg-hover',
-                  )}
+              {caps.react && (
+                <Popover
+                  open={pickerOpen}
+                  onOpenChange={setPickerOpen}
+                  side="bottom"
+                  align={mine ? 'right' : 'left'}
+                  trigger={
+                    <button type="button" onClick={() => setPickerOpen((o) => !o)} className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg" title="Reaktion hinzufügen">
+                      <SmilePlus className="h-4 w-4" />
+                    </button>
+                  }
                 >
-                  <FileIcon className="h-5 w-5 shrink-0 opacity-80" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium not-italic">{a.filename}</span>
-                    <span className="block text-[11px] opacity-70">{formatSize(a.size)}</span>
-                  </span>
-                  <Download className="h-4 w-4 shrink-0 opacity-70" />
-                </a>
-              ))}
+                  <EmojiGrid
+                    onPick={(e) => {
+                      setPickerOpen(false);
+                      p.onReact(m, e);
+                    }}
+                  />
+                </Popover>
+              )}
+              {caps.reply && (
+                <button type="button" onClick={() => p.onReply(m)} className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg" title="Antworten">
+                  <Reply className="h-4 w-4" />
+                </button>
+              )}
+              {/* Menü per Portal, damit es nicht vom Nachrichtenbereich/Eingabefeld abgeschnitten wird */}
+              <Popover
+                open={menuOpen}
+                onOpenChange={setMenuOpen}
+                side="bottom"
+                align={mine ? 'right' : 'left'}
+                trigger={
+                  <button type="button" onClick={() => setMenuOpen((o) => !o)} className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg" title="Weitere Aktionen">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                }
+              >
+                <div className="-m-1 min-w-52">
+                  {menuItems.map((it, i) =>
+                    it.divider === true ? (
+                      <div key={i} className="mx-1 my-1 border-t border-border" />
+                    ) : (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          it.onClick();
+                        }}
+                        className={cn(
+                          'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors',
+                          it.danger ? 'text-danger hover:bg-danger/10' : 'text-fg hover:bg-hover',
+                        )}
+                      >
+                        <span className={cn('[&_svg]:h-4 [&_svg]:w-4', it.danger ? 'text-danger' : 'text-muted')}>{it.icon}</span>
+                        <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                      </button>
+                    ),
+                  )}
+                </div>
+              </Popover>
             </div>
           )}
-
-          {m.deleted ? (
-            <span>Diese Nachricht wurde gelöscht</span>
-          ) : (
-            m.body && <span className="whitespace-pre-wrap">{renderBody(m.body)}</span>
-          )}
-          {cards.length > 0 && (
-            <div className={cn('flex flex-col gap-1.5', m.body.trim() ? 'mb-1 mt-1.5' : 'my-1')}>
-              {cards.map((c, i) => (
-                <MessageCard key={i} card={c} mine={mine} onMediaLoad={p.onMediaLoad} />
-              ))}
-            </div>
-          )}
-          {!emojiOnly && time}
-          {emojiOnly && <span className="ml-1 align-bottom text-[10.5px] text-subtle">{timeOf(m.createdAt)}</span>}
         </div>
 
         {m.reactions.length > 0 && (
@@ -248,62 +336,6 @@ function MessageItemImpl(p: MessageItemProps) {
           </div>
         )}
       </div>
-
-      {/* Aktionen bei Hover/Fokus */}
-      {!m.deleted && (
-        <div
-          className={cn(
-            'absolute -top-3 z-10 hidden items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5 shadow-pop group-focus-within:flex group-hover:flex',
-            mine ? 'left-3 sm:left-5' : 'right-3 sm:right-5',
-            pickerOpen && 'flex',
-          )}
-        >
-          {caps.react && CHAT_QUICK_REACTIONS.slice(0, 3).map((e) => (
-            <button key={e} type="button" onClick={() => p.onReact(m, e)} className="flex h-7 w-7 items-center justify-center rounded-md text-base hover:bg-hover" title={`Mit ${e} reagieren`}>
-              {e}
-            </button>
-          ))}
-          {caps.react && (
-          <Popover
-            open={pickerOpen}
-            onOpenChange={setPickerOpen}
-            side="bottom"
-            align={mine ? 'left' : 'right'}
-            trigger={
-              <button type="button" onClick={() => setPickerOpen((o) => !o)} className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg" title="Reaktion hinzufügen">
-                <SmilePlus className="h-4 w-4" />
-              </button>
-            }
-          >
-            <EmojiGrid
-              onPick={(e) => {
-                setPickerOpen(false);
-                p.onReact(m, e);
-              }}
-            />
-          </Popover>
-          )}
-          {caps.reply && (
-            <button type="button" onClick={() => p.onReply(m)} className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg" title="Antworten">
-              <Reply className="h-4 w-4" />
-            </button>
-          )}
-          <Dropdown
-            align={mine ? 'left' : 'right'}
-            trigger={
-              <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg" title="Weitere Aktionen">
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
-            }
-            items={[
-              ...(caps.reply ? [{ label: 'Antworten', icon: <Reply />, onClick: () => p.onReply(m) }] : []),
-              ...(bodyOf(m) ? [{ label: 'Text kopieren', icon: <Copy />, onClick: () => void copy() }] : []),
-              ...(mine && caps.edit ? [{ label: 'Bearbeiten', icon: <Pencil />, onClick: () => p.onEdit(m) }] : []),
-              ...(canDelete ? [{ divider: true, label: '' }, { label: 'Löschen', icon: <Trash2 />, danger: true, onClick: () => p.onDelete(m) }] : []),
-            ]}
-          />
-        </div>
-      )}
 
       {lightbox && (
         <Modal open onClose={() => setLightbox(null)} title={lightbox.filename} size="xl">
