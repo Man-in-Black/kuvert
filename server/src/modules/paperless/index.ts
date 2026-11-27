@@ -173,16 +173,22 @@ export default defineModule({
         const stats = mapStats(await new PaperlessClient(url, token).json<RawStats>('statistics/'));
         return { ok: true, authenticated: true, stats, message: 'Verbindung und eigener API-Token funktionieren' };
       }
-      // Ohne Token: 401/403 bedeutet "API erreichbar"
+      // Ohne Token: 401/403 bedeutet "API erreichbar". Nicht /api/ selbst abfragen –
+      // neuere Versionen leiten dort auf die API-Doku (schema/view/) um.
       let res: Response;
       try {
-        res = await fetch(`${url}/api/`, { headers: { Accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(10_000) });
+        res = await fetch(`${url}/api/statistics/`, { headers: { Accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(10_000) });
       } catch (err) {
         throw new AppError(502, 'paperless_unreachable', `Paperless nicht erreichbar: ${(err as Error).message}`);
       }
       if (res.status === 401 || res.status === 403) {
         return { ok: true, authenticated: false, message: 'API erreichbar – zum vollständigen Test einen eigenen Token unter „Einstellungen → Paperless“ hinterlegen' };
       }
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get('location') ?? '';
+        throw new AppError(400, 'paperless_redirect', `Weiterleitung (${res.status}${loc ? ` nach ${loc}` : ''}) – vorgeschalteter Login (z. B. SSO-Proxy) oder falsche URL?`);
+      }
+      if (res.status === 404) throw new AppError(400, 'paperless_not_found', 'Unter dieser Adresse wurde keine Paperless-API gefunden (404)');
       throw new AppError(400, 'paperless_unexpected', `Unerwartete Antwort (${res.status}) – ist die URL korrekt?`);
     });
 
