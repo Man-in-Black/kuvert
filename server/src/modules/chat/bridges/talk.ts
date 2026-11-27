@@ -4,9 +4,11 @@
  * Talk hat für REST-Clients keine Push-Verbindung: Die Raumliste wird regelmäßig abgefragt
  * (alle 10 s bei geöffnetem Browser, sonst jede Minute), gerade geöffnete Unterhaltungen
  * zusätzlich per Long-Polling – damit kommen Nachrichten dort praktisch sofort an.
+ * Laufende Anrufe erkennt Kuvert an der Raumliste (hasCall) und klingelt, wenn jemand anderes einen
+ * startet; verpasste 1:1-Anrufe meldet Talk als Systemnachricht "call_missed".
  */
 import crypto from 'node:crypto';
-import type { ChatCapabilities, ChatConversation, ChatMember, ChatMessage, ChatMessagePage, ChatUser } from '@kuvert/shared';
+import type { ChatCall, ChatCapabilities, ChatConversation, ChatMember, ChatMessage, ChatMessagePage, ChatRing, ChatUser } from '@kuvert/shared';
 import { AppError, AuthError, BadRequestError, HttpError, NotFoundError } from '../../../core/errors.js';
 import { withQuery } from '../../../core/http.js';
 import { nextcloudUserInfo } from '../../dav/storage.js';
@@ -54,6 +56,14 @@ interface TalkRoom {
   lastCommonReadMessage?: number;
   participantType: number;
   status?: string;
+  /** Im Raum läuft ein Anruf */
+  hasCall?: boolean;
+  /** Beginn des laufenden Anrufs (Sekunden, ab Talk 16) */
+  callStartTime?: number;
+  /** Meine Teilnahme am Anruf (0 = nicht dabei) */
+  participantFlags?: number;
+  /** Anruf-Benachrichtigungen für diesen Raum (0 = aus, in Talk eingestellt) */
+  notificationCalls?: number;
 }
 
 interface TalkParticipant {
@@ -149,6 +159,10 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
   private hot = new Map<string, number>();
   private longPolls = new Set<string>();
   private cache = new Map<string, TalkMessage>();
+  /** Zuletzt gesehener Anrufstatus je Raum (fehlt = noch nicht abgefragt) */
+  private inCall = new Map<string, boolean>();
+  /** Wer den laufenden Anruf gestartet hat (aus der Systemnachricht "call_started") */
+  private callStarter = new Map<string, { uid: string | null; name: string; own: boolean }>();
   private timer: NodeJS.Timeout | null = null;
   private stopped = true;
   private initialized = false;
@@ -338,7 +352,63 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
       capabilities: { ...this.caps(direct), calls: r.type !== 4 && r.type !== 6 },
       memberCount: direct ? 2 : null,
       participants,
+      call: this.callOf(r),
     };
+  }
+
+  /* ─────────── Anrufe ─────────── */
+
+  private callOf(r: TalkRoom): ChatCall | null {
+    if (!r.hasCall) return null;
+    return {
+      startedAt: msToIso((r.callStartTime || r.lastActivity || 0) * 1000),
+      ownerId: this.callStarter.get(r.token)?.uid ?? null,
+      // Teilnehmende liefert nur ein eigener Abruf je Raum – darauf verzichtet Kuvert
+      participantIds: [],
+      joinUrl: `${this.base}/index.php/call/${r.token}`,
+    };
+  }
+
+  /** Anrufstatus aus der Raumliste: Beginn → ggf. klingeln, Ende → Hinweis entfernen */
+  private updateCall(r: TalkRoom) {
+    const now = !!r.hasCall;
+    const was = this.inCall.get(r.token);
+    this.inCall.set(r.token, now);
+    if (was === undefined || was === now) return;
+    let ring: ChatRing | undefined;
+    if (now) {
+      const last = r.lastMessage && !Array.isArray(r.lastMessage) && r.lastMessage.systemMessage === 'call_started' ? r.lastMessage : null;
+      const starter = last
+        ? { uid: this.actorUid(last), name: last.actorDisplayName, own: last.actorType === 'users' && last.actorId === this.conn.remoteUserId }
+        : this.callStarter.get(r.token);
+      if (starter) this.callStarter.set(r.token, starter);
+      // Nicht klingeln: selbst gestartet, schon dabei (anderes Gerät), in Talk für den Raum abgeschaltet,
+      // Änderungsprotokoll/ehemalige Direktnachricht/Notizen
+      const direct = r.type === 1;
+      if (!starter?.own && !r.participantFlags && r.notificationCalls !== 0 && (direct || r.type === 2 || r.type === 3)) {
+        ring = { caller: starter?.name || (direct ? r.displayName : 'Jemand'), title: direct ? '' : r.displayName, direct };
+        this.host.ringing(this.convId(r.token), ring);
+      }
+    } else this.callStarter.delete(r.token);
+    this.host.publish({ type: 'chat.call', conversationId: this.convId(r.token), call: this.callOf(r), ring });
+  }
+
+  /** Systemnachrichten zu Anrufen: Starter merken, verpassten Anruf melden */
+  private callMessage(token: string, m: TalkMessage) {
+    if (m.systemMessage === 'call_started') {
+      this.callStarter.set(token, { uid: this.actorUid(m), name: m.actorDisplayName, own: m.actorType === 'users' && m.actorId === this.conn.remoteUserId });
+      return;
+    }
+    // Talk liefert "call_missed" nur der angerufenen Person (die anrufende sieht "call_tried")
+    if (m.systemMessage !== 'call_missed') return;
+    const caller = this.params(m).user;
+    if (caller?.id === this.conn.remoteUserId) return;
+    const room = this.rooms.get(token);
+    if (room?.notificationCalls === 0) return;
+    const direct = !room || room.type === 1 || room.type === 5;
+    const ring: ChatRing = { caller: caller?.name || m.actorDisplayName || room?.displayName || 'Jemand', title: direct ? '' : (room?.displayName ?? ''), direct, missed: true };
+    this.host.ringing(this.convId(token), ring);
+    this.host.publish({ type: 'chat.call', conversationId: this.convId(token), call: null, ring });
   }
 
   /* ─────────── Unterhaltungen ─────────── */
@@ -677,6 +747,7 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
         this.unread.set(r.token, r.unreadMessages);
         if (prev === undefined) {
           this.known.set(r.token, lastId);
+          this.inCall.set(r.token, !!r.hasCall);
           if (this.initialized) this.host.publish({ type: 'chat.conversation', conversationId: this.convId(r.token) });
           continue;
         }
@@ -684,6 +755,7 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
           const list = await this.chat(r.token, { lookIntoFuture: 1, timeout: 0, limit: 100, lastKnownMessageId: prev }).catch(() => []);
           this.process(r.token, list);
         }
+        this.updateCall(r);
         // Auf einem anderen Gerät gelesen
         if (prevUnread && !r.unreadMessages) this.host.publish({ type: 'chat.read', conversationId: this.convId(r.token), userId: this.me, seq: r.lastReadMessage });
       }
@@ -692,6 +764,8 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
           if (seen.has(token)) continue;
           this.known.delete(token);
           this.rooms.delete(token);
+          this.inCall.delete(token);
+          this.callStarter.delete(token);
           this.host.publish({ type: 'chat.conversation', conversationId: this.convId(token), removed: true });
         }
       }
@@ -719,6 +793,7 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
       const msg = this.toMessage(m);
       if (!msg) continue;
       this.host.publish({ type: 'chat.message', conversationId: msg.conversationId, message: msg });
+      if (m.systemMessage) this.callMessage(token, m);
       const own = m.actorType === 'users' && m.actorId === this.conn.remoteUserId;
       if (msg.kind === 'text' && !own) {
         const room = this.rooms.get(token);

@@ -10,7 +10,7 @@
  * Abschalten: KUVERT_DISABLED_MODULES=chat · nur die Anbindungen: CHAT_BRIDGES=false
  */
 import { z } from 'zod';
-import { DEFAULT_CHAT_SETTINGS, mentionHandle, mentionsHandle, type ChatConversation, type ChatMessage, type ChatSettings, type ChatUser, type ServerEvent } from '@kuvert/shared';
+import { DEFAULT_CHAT_SETTINGS, mentionHandle, mentionsHandle, type ChatConversation, type ChatMessage, type ChatRing, type ChatSettings, type ChatUser, type ServerEvent } from '@kuvert/shared';
 import { audit } from '../../core/audit.js';
 import { AppError, BadRequestError, NotFoundError } from '../../core/errors.js';
 import { defineModule, type ModuleContext } from '../../core/module.js';
@@ -132,17 +132,22 @@ async function pushExternal(userId: string, message: ChatMessage, info: { kind: 
   }
 }
 
-/** Web Push bei einem eingehenden Anruf (Mattermost Calls) */
-async function pushRing(userId: string, conversationId: string, info: { caller: string; title: string; direct: boolean }) {
+/** Web Push bei einem eingehenden oder verpassten Anruf (Mattermost, Talk, Teams) */
+async function pushRing(userId: string, conversationId: string, info: ChatRing) {
   const ctx = ctxRef!;
   if (!ctx.registry.modules.some((m) => m.id === 'notifications')) return;
   if (!chatSettings(userId).notify || extPrefs.get(userId, conversationId).muted) return;
   if (!pushStore.hasSubscriptions(userId)) return;
   try {
     await pushStore.send(userId, {
-      title: info.direct ? `📞 ${info.caller} ruft an` : `📞 ${info.caller} startet einen Anruf in ${info.title}`,
-      body: 'Zum Beitreten öffnen',
+      ...(info.missed
+        ? { title: `Verpasster Anruf von ${info.caller}`, body: info.direct ? 'Zum Zurückrufen öffnen' : `In ${info.title}` }
+        : {
+            title: info.direct ? `📞 ${info.caller} ruft an` : `📞 ${info.caller} startet einen Anruf in ${info.title}`,
+            body: 'Zum Beitreten öffnen',
+          }),
       url: `/chat/${conversationId}`,
+      // Gleicher Tag: "Verpasst" ersetzt auf dem Gerät die Klingel-Benachrichtigung
       tag: `chat-call-${conversationId}`,
     });
   } catch (err) {

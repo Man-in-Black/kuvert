@@ -2,7 +2,7 @@ import type { AccountTypeInfo } from './accounts';
 import type { EmailAddress } from './common';
 import type { CalendarEvent } from './pim';
 import type { MessageSummary } from './mail';
-import type { ChatCall, ChatMessage } from './chat';
+import type { ChatCall, ChatMessage, ChatRing } from './chat';
 import type { TriageInfo } from './triage';
 
 export interface User {
@@ -161,7 +161,7 @@ export type ServerEvent =
   /** Abschnitte/Favoriten eines verbundenen Dienstes geändert (neu laden) */
   | { type: 'chat.categories'; connectionId: string }
   /** Anruf begonnen/geändert/beendet (call null); ring = jemand ruft mich an */
-  | { type: 'chat.call'; conversationId: string; call: ChatCall | null; ring?: { caller: string; title: string; direct: boolean } };
+  | { type: 'chat.call'; conversationId: string; call: ChatCall | null; ring?: ChatRing };
 
 /* ───────────────────────────── KI ───────────────────────────── */
 

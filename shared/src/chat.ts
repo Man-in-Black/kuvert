@@ -125,6 +125,17 @@ export interface ChatCall {
   joinUrl?: string | null;
 }
 
+/** Eingehender (oder verpasster) Anruf aus einem verbundenen Dienst – löst Klingeln bzw. Hinweis aus */
+export interface ChatRing {
+  /** Name der anrufenden Person */
+  caller: string;
+  /** Name der Gruppe (leer bei Direktnachrichten) */
+  title: string;
+  direct: boolean;
+  /** Anruf ist vorbei, ohne dass ich dabei war ("Verpasster Anruf") */
+  missed?: boolean;
+}
+
 /* ───────────── Verbundene Dienste (Mattermost, Nextcloud Talk, Microsoft Teams) ───────────── */
 
 export type ChatBridgeType = 'mattermost' | 'talk' | 'teams';

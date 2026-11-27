@@ -38,19 +38,29 @@ export function ChatService() {
   // Liste früh laden, damit das Badge in der Navigation sofort stimmt
   useConversations();
 
+  /**
+   * Systembenachrichtigung, wenn man das Fenster nicht im Blick hat. Gibt zurück, ob das Fenster
+   * sichtbar ist (dann zusätzlich ein Toast).
+   */
+  const systemAlert = (title: string, body: string, tag: string, url: string): boolean => {
+    if (document.hidden) {
+      // Mit Web Push auf diesem Gerät zeigt der Service Worker die Nachricht an (sonst doppelt)
+      void pushActiveHere().then((push) => {
+        if (!push) void showSystemNotification(title, { body, tag }, url, () => navigate(url));
+      });
+      return false;
+    }
+    // Fenster sichtbar, aber nicht im Fokus (anderes Programm, zweiter Monitor): zusätzlich als
+    // Systembenachrichtigung – den Toast allein würde man dort übersehen (wie bei Terminen)
+    if (!document.hasFocus()) void showSystemNotification(title, { body, tag }, url, () => navigate(url));
+    return true;
+  };
+
   const notify = (conversationId: string, title: string, body: string) => {
     const url = `/chat/${conversationId}`;
     // Zählt im Fenstertitel mit – in der Desktop-App der rote Punkt im Infobereich
     bumpUnseen('chat');
-    if (document.hidden) {
-      // Mit Web Push auf diesem Gerät zeigt der Service Worker die Nachricht an (sonst doppelt)
-      void pushActiveHere().then((push) => {
-        if (!push) void showSystemNotification(title, { body, tag: `chat-${conversationId}` }, url, () => navigate(url));
-      });
-    } else {
-      // Fenster sichtbar, aber nicht im Fokus (anderes Programm, zweiter Monitor): zusätzlich als
-      // Systembenachrichtigung – den Toast allein würde man dort übersehen (wie bei Terminen)
-      if (!document.hasFocus()) void showSystemNotification(title, { body, tag: `chat-${conversationId}` }, url, () => navigate(url));
+    if (systemAlert(title, body, `chat-${conversationId}`, url)) {
       toast(title, { description: body, action: { label: 'Öffnen', onClick: () => navigate(url) }, id: `chat-${conversationId}` });
     }
     if (settings.sound) playBeep();
@@ -90,33 +100,48 @@ export function ChatService() {
     void qc.invalidateQueries({ queryKey: chatKeys.categories });
   });
 
-  // Anruf begonnen, geändert oder beendet; bei "ring" ruft mich jemand an
+  // Anruf begonnen, geändert oder beendet; bei "ring" ruft mich jemand an (bzw. hat mich verpasst angerufen)
   useServerEvent('chat.call', (e) => {
     patchConversations(qc, (l) => l.map((c) => (c.id === e.conversationId ? { ...c, call: e.call } : c)));
     qc.setQueryData<ChatConversation>(['chat', 'conversation', e.conversationId], (c) => (c ? { ...c, call: e.call } : c));
+    // Auch Tag der Systembenachrichtigung: "Verpasst" ersetzt die des Klingelns
     const toastId = `chat-call-${e.conversationId}`;
-    if (!e.call) {
-      toast.dismiss(toastId);
-      return;
-    }
+    if (!e.call) toast.dismiss(toastId);
     if (!e.ring || !settings.notify) return;
     const conv = qc.getQueryData<ChatConversation[]>(chatKeys.conversations)?.find((c) => c.id === e.conversationId);
     if (conv?.muted) return;
-    const title = e.ring.direct ? `📞 ${e.ring.caller} ruft an` : `📞 ${e.ring.caller} startet einen Anruf in ${e.ring.title}`;
     const url = `/chat/${e.conversationId}`;
-    const joinUrl = e.call.joinUrl ?? conv?.source?.webUrl ?? null;
-    if (document.hidden) {
-      void pushActiveHere().then((push) => {
-        if (!push) void showSystemNotification(title, { body: 'Zum Beitreten öffnen', tag: toastId }, url, () => navigate(url));
-      });
-    } else {
-      if (!document.hasFocus()) void showSystemNotification(title, { body: 'Zum Beitreten öffnen', tag: toastId }, url, () => navigate(url));
+    const service = conv?.source?.label ?? 'dem Dienst';
+
+    if (e.ring.missed) {
+      const callUrl = conv?.source?.callUrl ?? conv?.source?.webUrl ?? null;
+      const title = `Verpasster Anruf von ${e.ring.caller}`;
+      const body = e.ring.direct ? service : `In ${e.ring.title}`;
+      bumpUnseen('chat');
+      if (systemAlert(title, e.ring.direct ? 'Zum Zurückrufen öffnen' : body, toastId, url)) {
+        // Eigene ID, damit das gleichzeitige Anruf-Ende (call: null) den Hinweis nicht gleich wieder schließt
+        toast(`📞 ${title}`, {
+          id: `chat-missed-${e.conversationId}`,
+          description: body,
+          duration: 60_000,
+          action: callUrl ? { label: 'Zurückrufen', onClick: () => window.open(callUrl, '_blank', 'noopener,noreferrer') } : { label: 'Öffnen', onClick: () => navigate(url) },
+          cancel: callUrl ? { label: 'Chat öffnen', onClick: () => navigate(url) } : undefined,
+        });
+      }
+      if (settings.sound) playBeep();
+      return;
+    }
+
+    if (!e.call) return;
+    const callUrl = e.call.joinUrl ?? conv?.source?.webUrl ?? null;
+    const title = e.ring.direct ? `📞 ${e.ring.caller} ruft an` : `📞 ${e.ring.caller} startet einen Anruf in ${e.ring.title}`;
+    if (systemAlert(title, 'Zum Beitreten öffnen', toastId, url)) {
       toast(title, {
         id: toastId,
-        description: `Der Anruf läuft in ${conv?.source?.label ?? 'Mattermost'}.`,
+        description: `Der Anruf läuft in ${service}.`,
         duration: 30_000,
-        action: joinUrl ? { label: 'Beitreten', onClick: () => window.open(joinUrl, '_blank', 'noopener,noreferrer') } : { label: 'Öffnen', onClick: () => navigate(url) },
-        cancel: joinUrl ? { label: 'Chat öffnen', onClick: () => navigate(url) } : undefined,
+        action: callUrl ? { label: 'Beitreten', onClick: () => window.open(callUrl, '_blank', 'noopener,noreferrer') } : { label: 'Öffnen', onClick: () => navigate(url) },
+        cancel: callUrl ? { label: 'Chat öffnen', onClick: () => navigate(url) } : undefined,
       });
     }
     if (settings.sound) [0, 1600, 3200].forEach((ms) => window.setTimeout(playBeep, ms));

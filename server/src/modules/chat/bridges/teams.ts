@@ -7,8 +7,12 @@
  * Graph-Änderungsbenachrichtigungen bräuchten einen öffentlich erreichbaren Webhook –
  * deshalb wird wie bei Nextcloud Talk abgefragt: die Chatliste alle 15 s bei geöffnetem
  * Browser (sonst jede Minute), gerade geöffnete Unterhaltungen alle paar Sekunden.
+ *
+ * Anrufe: Graph zeigt im Chat nur Systemnachrichten (callStarted/callEnded) – Kuvert klingelt bei
+ * "Anruf gestartet" von jemand anderem und meldet in 1:1-Chats beendete Anrufe ohne mich als verpasst.
+ * Das eigentliche Klingeln eines 1:1-Anrufs sieht Graph ohne Kommunikations-API (Bot) nicht.
  */
-import type { ChatAttachment, ChatCapabilities, ChatConversation, ChatMember, ChatMessage, ChatMessagePage, ChatReaction, ChatUser } from '@kuvert/shared';
+import type { ChatAttachment, ChatCall, ChatCapabilities, ChatConversation, ChatMember, ChatMessage, ChatMessagePage, ChatReaction, ChatRing, ChatUser } from '@kuvert/shared';
 import { mentionHandle } from '@kuvert/shared';
 import { AppError, AuthError, BadRequestError, HttpError, NotFoundError } from '../../../core/errors.js';
 import type { AccountService } from '../../../core/accounts.js';
@@ -106,6 +110,11 @@ const SLOW_POLL = 60_000;
 const HOT_POLL = 4_000;
 const HOT_MS = 5 * 60_000;
 const MAX_CHATS = 100;
+/** Ältere "Anruf gestartet"-Meldungen klingeln nicht mehr (z. B. nach langer Abfragepause) */
+const RING_MAX_AGE = 2 * 60_000;
+const MISSED_MAX_AGE = 15 * 60_000;
+/** Anruf ohne Ende-Meldung gilt danach als beendet */
+const STALE_CALL_MS = 8 * 3600_000;
 
 const CAPS: ChatCapabilities = { edit: true, delete: true, react: true, reply: true, files: false, typing: false, readReceipts: false, manage: false, calls: true };
 
@@ -300,6 +309,8 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
   capabilities = CAPS;
   private chats = new Map<string, GChat>();
   private state = new Map<string, ChatState>();
+  /** Laufende Anrufe je Chat (aus den Systemnachrichten callStarted/callEnded) */
+  private calls = new Map<string, ChatCall>();
   private hot = new Map<string, number>();
   private inflight = new Map<string, Promise<void>>();
   private cache = new Map<string, GMessage>();
@@ -574,7 +585,48 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
       capabilities: CAPS,
       memberCount: (c.members ?? []).length || null,
       participants,
+      call: this.calls.get(c.id) ?? null,
     };
+  }
+
+  /* ─────────── Anrufe ─────────── */
+
+  /** Systemnachricht "Anruf gestartet/beendet" → Anrufstatus, Klingeln bzw. "Verpasster Anruf" */
+  private callEvent(chatId: string, m: GMessage) {
+    const d = m.eventDetail ?? {};
+    const type = String(d['@odata.type'] ?? '').replace('#microsoft.graph.', '');
+    if (type !== 'callStartedEventMessageDetail' && type !== 'callEndedEventMessageDetail') return;
+    const chat = this.chats.get(chatId);
+    const initiator = (d.initiator ?? null) as GIdentitySet | null;
+    const own = initiator?.user?.id === this.conn.remoteUserId;
+    const caller = initiator?.user?.displayName || initiator?.application?.displayName || (chat?.chatType === 'oneOnOne' ? this.chatName(chat) : 'Jemand');
+    const direct = chat?.chatType === 'oneOnOne';
+    const age = Date.now() - (Date.parse(m.createdDateTime) || 0);
+    const conversationId = this.convId(chatId);
+    let ring: ChatRing | undefined;
+
+    if (type === 'callStartedEventMessageDetail') {
+      const call: ChatCall = { startedAt: m.createdDateTime, ownerId: this.uid(initiator?.user?.id), participantIds: [], joinUrl: chat?.webUrl ?? null };
+      this.calls.set(chatId, call);
+      // Besprechungschats klingeln nicht (dafür gibt es die Terminerinnerung), zeigen aber "Anruf läuft"
+      if (!own && age < RING_MAX_AGE && (direct || chat?.chatType === 'group')) {
+        ring = { caller, title: direct ? '' : this.chatName(chat!), direct };
+        this.host.ringing(conversationId, ring);
+      }
+      this.host.publish({ type: 'chat.call', conversationId, call, ring });
+      return;
+    }
+
+    this.calls.delete(chatId);
+    // Verpasst: 1:1-Anruf der anderen Person, an dem ich laut Teilnehmerliste nicht teilgenommen habe
+    // (ohne Teilnehmerliste keine Aussage möglich)
+    const participants = (Array.isArray(d.callParticipants) ? d.callParticipants : []) as { participant?: GIdentitySet | null }[];
+    const joined = participants.some((p) => p.participant?.user?.id === this.conn.remoteUserId);
+    if (direct && initiator?.user?.id && !own && participants.length && !joined && d.callEventType !== 'meeting' && age < MISSED_MAX_AGE) {
+      ring = { caller, title: '', direct: true, missed: true };
+      this.host.ringing(conversationId, ring);
+    }
+    this.host.publish({ type: 'chat.call', conversationId, call: null, ring });
   }
 
   /* ─────────── Unterhaltungen ─────────── */
@@ -1012,6 +1064,7 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
         st.lastCreated = created;
         st.previewId = m.id;
         this.host.publish({ type: 'chat.message', conversationId: msg.conversationId, message: msg });
+        if (msg.kind === 'system') this.callEvent(chatId, m);
         const own = m.from?.user?.id === this.conn.remoteUserId;
         if (msg.kind === 'text' && !own && !msg.deleted) {
           st.unread++;
@@ -1068,8 +1121,14 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
           if (seen.has(id)) continue;
           this.state.delete(id);
           this.chats.delete(id);
+          this.calls.delete(id);
           this.host.publish({ type: 'chat.conversation', conversationId: this.convId(id), removed: true });
         }
+      }
+      for (const [id, call] of this.calls) {
+        if (Date.now() - (Date.parse(call.startedAt) || 0) < STALE_CALL_MS) continue;
+        this.calls.delete(id);
+        this.host.publish({ type: 'chat.call', conversationId: this.convId(id), call: null });
       }
       this.initialized = true;
       this.host.setStatus('ok');

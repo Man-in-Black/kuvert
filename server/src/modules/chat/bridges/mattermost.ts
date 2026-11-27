@@ -16,6 +16,7 @@ import {
   type ChatMessage,
   type ChatMessagePage,
   type ChatReaction,
+  type ChatRing,
   type ChatUser,
 } from '@kuvert/shared';
 import { randomId } from '../../../core/crypto.js';
@@ -408,7 +409,7 @@ export class MattermostBridge extends BridgeBase implements ChatBridge {
     };
   }
 
-  private publishCall(channelId: string, ring?: { caller: string; title: string; direct: boolean }) {
+  private publishCall(channelId: string, ring?: ChatRing) {
     this.host.publish({ type: 'chat.call', conversationId: this.convId(channelId), call: this.callOf(channelId), ring });
   }
 
@@ -452,7 +453,7 @@ export class MattermostBridge extends BridgeBase implements ChatBridge {
       ch = await this.api<MmChannel>(`/channels/${encodeURIComponent(channelId)}`).catch(() => undefined);
       if (ch) this.channels.set(ch.id, ch);
     }
-    let ring: { caller: string; title: string; direct: boolean } | undefined;
+    let ring: ChatRing | undefined;
     if (ch && (ch.type === 'D' || ch.type === 'G') && ownerId && ownerId !== this.conn.remoteUserId) {
       await this.ensureUsers([ownerId]);
       ring = { caller: mmDisplayName(this.users.get(ownerId)), title: ch.type === 'G' ? ch.display_name : '', direct: ch.type === 'D' };

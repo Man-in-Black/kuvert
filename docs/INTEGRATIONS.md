@@ -183,6 +183,7 @@ Zugangsdaten werden verschlüsselt gespeichert und nie an den Browser zurückgeg
 | Echtzeit | WebSocket | Abfrage alle 10 s (Browser offen) bzw. 60 s, geöffnete Unterhaltung per Long-Polling sofort | Abfrage alle 15 s (Browser offen) bzw. 60 s, geöffnete Unterhaltung alle 4 s |
 | „schreibt …“ / Online-Status | ✓ / ✓ | – / Direktnachrichten | – / – |
 | Lesebestätigungen | – | Direktnachrichten | – (Lesestand wird an Teams gemeldet) |
+| Eingehende Anrufe (Hinweis, Desktop, Web Push) | Direktnachrichten & Gruppen (Calls-Plugin), sofort | Sobald jemand anderes in einem Raum einen Anruf startet (Raum-Einstellung „Anruf-Benachrichtigungen“ aus Talk gilt); verpasste 1:1-Anrufe | „Anruf gestartet“ in 1:1- und Gruppenchats; verpasste 1:1-Anrufe |
 | Suche | ✓ | ✓ (Nextcloud-Suche) | ✓ (Microsoft Search) |
 | Neue Unterhaltung | Direktnachricht, privater Kanal (im ersten Team) | Direktnachricht, Gruppe | Direktnachricht, Gruppenchat |
 
@@ -193,6 +194,12 @@ Zugangsdaten werden verschlüsselt gespeichert und nie an den Browser zurückgeg
   bei Erwähnung (`@Name`, `@all`/`@channel`/`@here`).
 - Mitglieder, Namen und Beschreibungen werden im jeweiligen Dienst verwaltet; die Detailansicht zeigt sie an und
   verlinkt auf die Unterhaltung im Original.
+- **Anrufe** finden immer im jeweiligen Dienst statt – Kuvert klingelt nur und bietet „Beitreten“ bzw. „Zurückrufen“
+  an. Talk und Teams werden abgefragt, das Klingeln kommt daher mit der Abfrageverzögerung (bei geschlossenem Browser
+  bis zu einer Minute); was in der Zeit schon wieder beendet wurde, erscheint als „Verpasster Anruf“. Teams: Graph
+  zeigt nur die Chat-Systemnachrichten zu Anrufen, nicht das Klingeln selbst – kommt bei einem 1:1-Anruf keine
+  „Anruf gestartet“-Meldung, meldet Kuvert ihn erst nach dem Ende als verpasst. Besprechungschats klingeln nicht
+  (dafür gibt es die Terminerinnerung), zeigen aber „Anruf läuft“.
 - Mattermost-Reaktionen werden über Emoji-Namen abgebildet; eigene (Custom-)Emojis erscheinen als `:name:`.
 - Teams liefert keine Ungelesen-Zähler: Beim Start zeigt Kuvert „1“ für ungelesene Chats, danach wird mitgezählt.
 - Kuvert ruft die Dienste serverseitig auf – der Kuvert-Server muss Mattermost, Nextcloud bzw. Microsoft Graph erreichen können.

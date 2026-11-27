@@ -2,7 +2,7 @@
  * Verwaltet die Verbindungen der Benutzer zu Mattermost, Nextcloud Talk und Microsoft Teams:
  * einrichten, starten/stoppen, Status melden und Brücken für Anfragen bereitstellen.
  */
-import type { ChatCategory, ChatConnection, ChatConnectionInput, ChatConversation, ChatMessage, ServerEvent } from '@kuvert/shared';
+import type { ChatCategory, ChatConnection, ChatConnectionInput, ChatConversation, ChatMessage, ChatRing, ServerEvent } from '@kuvert/shared';
 import { CHAT_BRIDGE_LABELS } from '@kuvert/shared';
 import { randomId } from '../../../core/crypto.js';
 import { BadRequestError, NotFoundError } from '../../../core/errors.js';
@@ -13,7 +13,7 @@ import { TalkBridge, setupTalk } from './talk.js';
 import { TeamsBridge, setupTeams, teamsGraph } from './teams.js';
 
 export type IncomingHandler = (userId: string, message: ChatMessage, info: { kind: 'direct' | 'group'; title: string; sender: string }) => void;
-export type RingHandler = (userId: string, conversationId: string, info: { caller: string; title: string; direct: boolean }) => void;
+export type RingHandler = (userId: string, conversationId: string, info: ChatRing) => void;
 
 const LIST_TIMEOUT = 20_000;
 

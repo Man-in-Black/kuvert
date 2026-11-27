@@ -20,6 +20,7 @@ import {
   type ChatConversation,
   type ChatMessage,
   type ChatMessagePage,
+  type ChatRing,
   type ChatUser,
   type ServerEvent,
 } from '@kuvert/shared';
@@ -228,8 +229,8 @@ export interface BridgeHost {
   setStatus(status: ChatConnection['status'], error?: string | null): void;
   /** Geänderte Zugangsdaten (z. B. neues Sitzungstoken) dauerhaft speichern */
   saveSecrets(secrets: Record<string, string>): void;
-  /** Jemand ruft mich an (Direktnachricht/Gruppe) – Web Push, sofern nicht stummgeschaltet */
-  ringing(conversationId: string, info: { caller: string; title: string; direct: boolean }): void;
+  /** Jemand ruft mich an bzw. hat mich verpasst angerufen – Web Push, sofern nicht stummgeschaltet */
+  ringing(conversationId: string, info: ChatRing): void;
 }
 
 export interface ChatBridge {
