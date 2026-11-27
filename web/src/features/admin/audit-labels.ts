@@ -34,6 +34,8 @@ const LABELS: Record<string, string> = {
   'threecx.config_updated': '3CX-Anbindung geändert',
   'threecx.extension_assigned': '3CX-Nebenstelle zugeordnet',
   'threecx.auto_assigned': '3CX-Nebenstellen automatisch zugeordnet',
+  'meet.config_updated': 'Anruf-Anbindung (LiveKit) geändert',
+  'meet.meeting_created': 'Meeting-Link angelegt',
 };
 
 export function auditLabel(action: string): string {

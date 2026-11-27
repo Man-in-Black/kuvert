@@ -16,6 +16,7 @@ interface StoredConfig {
   secretEnc?: string | null;
   screenShare?: boolean;
   whiteboard?: boolean;
+  guests?: boolean;
 }
 
 const env = (name: string) => (process.env[name] ?? '').trim();
@@ -31,6 +32,7 @@ function stored(): StoredConfig {
     secretEnc: s?.secretEnc ?? (env('LIVEKIT_API_SECRET') ? encrypt(env('LIVEKIT_API_SECRET')) : null),
     screenShare: s?.screenShare ?? true,
     whiteboard: s?.whiteboard ?? true,
+    guests: s?.guests ?? true,
   };
 }
 
@@ -56,6 +58,7 @@ export const meetConfig = {
       secretConfigured: !!s.secretEnc,
       screenShare: s.screenShare !== false,
       whiteboard: s.whiteboard !== false,
+      guests: s.guests !== false,
     };
   },
 
@@ -69,6 +72,7 @@ export const meetConfig = {
       secretEnc: input.apiSecret ? encrypt(input.apiSecret) : (prev.secretEnc ?? null),
       screenShare: input.screenShare,
       whiteboard: input.whiteboard,
+      guests: input.guests,
     } satisfies StoredConfig);
   },
 

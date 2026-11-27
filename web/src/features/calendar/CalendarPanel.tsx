@@ -19,7 +19,7 @@ import { EventDetails } from './EventDetails';
 import { EventEditor, type EditorInit } from './EventEditor';
 import { MiniMonth } from './MiniMonth';
 import { isRecurring } from './series';
-import { eventColor, meetingLabel, parseEventDate } from './utils';
+import { eventColor, eventMeeting, kuvertJoinPath, meetingLabel, parseEventDate } from './utils';
 import { HIDDEN_KEY, usePersistentSet } from './visibility';
 
 const DAYS = 7;
@@ -199,6 +199,8 @@ export default function CalendarPanel() {
 }
 
 function AgendaItem({ ev, day, now, color, onOpen }: { ev: CalendarEvent; day: Date; now: number; color: string; onOpen: () => void }) {
+  const navigate = useNavigate();
+  const meeting = eventMeeting(ev);
   const start = parseEventDate(ev.start);
   const end = parseEventDate(ev.end);
   const past = end.getTime() <= now;
@@ -248,14 +250,22 @@ function AgendaItem({ ev, day, now, color, onOpen }: { ev: CalendarEvent; day: D
             )}
           </div>
         </div>
-        {ev.onlineMeetingUrl && !past && !cancelled && (
+        {meeting && !past && !cancelled && (
           <a
-            href={ev.onlineMeetingUrl}
+            href={meeting.url}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            title={`${meetingLabel(ev.onlineMeetingProvider)} beitreten`}
-            aria-label={`${meetingLabel(ev.onlineMeetingProvider)} beitreten`}
+            onClick={(e) => {
+              e.stopPropagation();
+              // Kuvert-Anruf dieses Servers: in Kuvert öffnen statt in einem neuen Tab
+              const path = kuvertJoinPath(meeting.url);
+              if (path) {
+                e.preventDefault();
+                navigate(path);
+              }
+            }}
+            title={`${meetingLabel(meeting.provider)} beitreten`}
+            aria-label={`${meetingLabel(meeting.provider)} beitreten`}
             className="flex h-7 w-7 shrink-0 items-center justify-center self-center rounded-md text-primary transition-colors hover:bg-primary-soft"
           >
             <Video className="h-4 w-4" />

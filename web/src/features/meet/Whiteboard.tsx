@@ -26,7 +26,7 @@ type RemoteElements = Parameters<typeof reconcileElements>[1];
 
 const isDark = () => document.documentElement.classList.contains('dark');
 
-export default function Whiteboard({ sync, conversationId, myName }: { sync: WhiteboardSync; conversationId: string; myName: string }) {
+export default function Whiteboard({ sync, conversationId, myName }: { sync: WhiteboardSync; conversationId: string | null; myName: string }) {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [exporting, setExporting] = useState(false);
   const [dark, setDark] = useState(isDark);
@@ -76,7 +76,7 @@ export default function Whiteboard({ sync, conversationId, myName }: { sync: Whi
   }, [api, sync, myName]);
 
   const sendToChat = async () => {
-    if (!api) return;
+    if (!api || !conversationId) return;
     const elements = api.getSceneElements();
     if (!elements.length) {
       toast('Das Whiteboard ist noch leer.');
@@ -113,7 +113,8 @@ export default function Whiteboard({ sync, conversationId, myName }: { sync: Whi
         onChange={(els, _state, files: BinaryFiles) => sync.local(els as unknown as WbElement[], files as unknown as Record<string, WbFile>)}
         onPointerUpdate={({ pointer, button }) => sync.pointer(pointer.x, pointer.y, button)}
         UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, toggleTheme: false, saveAsImage: true, export: false } }}
-        renderTopRightUI={() => (
+        renderTopRightUI={() =>
+          !conversationId ? null : (
           <button
             type="button"
             onClick={() => void sendToChat()}
@@ -125,7 +126,8 @@ export default function Whiteboard({ sync, conversationId, myName }: { sync: Whi
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageUp className="h-4 w-4" />}
             <span className="hidden xl:inline">In den Chat</span>
           </button>
-        )}
+          )
+        }
       />
     </div>
   );

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -25,7 +26,7 @@ import { deleteEvent, getEvent, invalidateEvents, respondToEvent } from './api';
 import { mapsSearchUrl } from './LocationInput';
 import { describeRRule } from './rrule';
 import { deleteFollowing, followingRule, isFirstOccurrence, isOccurrence, isRecurring as isRecurringEvent, useSeriesScope, type SplitContext } from './series';
-import { SHOW_AS_LABELS, eventColor, eventDescription, formatEventRange } from './utils';
+import { SHOW_AS_LABELS, eventColor, eventDescription, eventMeeting, formatEventRange, kuvertJoinPath, meetingLabel } from './utils';
 
 const STATUS_LABEL: Record<NonNullable<Attendee['status']>, string> = {
   accepted: 'Zugesagt',
@@ -88,11 +89,13 @@ export function EventDetails({
   onEdit: (event: CalendarEvent, split?: SplitContext) => void;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { confirm, dialog } = useConfirm();
   const { askScope, dialog: scopeDialog } = useSeriesScope();
   const [busy, setBusy] = useState<string | null>(null);
   const color = eventColor(event, calendar, account);
   const description = eventDescription(event);
+  const meeting = eventMeeting(event);
   const readOnly = !!calendar?.readOnly;
   const canRespond = !event.isOrganizer && (!!event.myResponse || (event.attendees?.length ?? 0) > 0);
   const isRecurring = isRecurringEvent(event);
@@ -216,15 +219,25 @@ export function EventDetails({
           )}
         </Row>
 
-        {event.onlineMeetingUrl && (
+        {meeting && (
           <Row icon={<Video />}>
             <Button
               variant="primary"
               size="sm"
               icon={<Video className="h-4 w-4" />}
-              onClick={() => window.open(event.onlineMeetingUrl, '_blank', 'noopener,noreferrer')}
+              onClick={() => {
+                // Kuvert-Anruf dieses Servers: in Kuvert öffnen statt in einem neuen Tab
+                const path = kuvertJoinPath(meeting.url);
+                if (path) {
+                  navigate(path);
+                  onClose();
+                } else window.open(meeting.url, '_blank', 'noopener,noreferrer');
+              }}
             >
-              Teilnehmen{event.onlineMeetingProvider ? ` (${event.onlineMeetingProvider === 'teams' ? 'Teams' : event.onlineMeetingProvider === 'meet' ? 'Meet' : event.onlineMeetingProvider})` : ''}
+              Teilnehmen
+              {meeting.provider
+                ? ` (${meeting.provider === 'teams' ? 'Teams' : meeting.provider === 'meet' ? 'Meet' : meeting.provider === 'kuvert' ? meetingLabel('kuvert') : meeting.provider})`
+                : ''}
             </Button>
           </Row>
         )}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -14,6 +14,10 @@ import { StandaloneWindow, WINDOW_PREFIX } from '@/layout/StandaloneWindow';
 import { LoginPage } from '@/pages/Login';
 import { ForcedPasswordPage, ForcedTwoFactorPage } from '@/pages/ForcedSteps';
 import { BrandMark } from '@/pages/AuthLayout';
+
+/** Gastseite für Einladungslinks (/join/<token>) – erst bei Bedarf laden */
+const GuestJoinPage = lazy(() => import('@/features/meet/JoinPages'));
+const joinToken = (pathname: string) => pathname.match(/^\/join\/([\w-]{16,64})\/?$/)?.[1] ?? null;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,6 +57,7 @@ function PublicTheme() {
 
 function AuthGate() {
   const qc = useQueryClient();
+  const location = useLocation();
   const { data: app, isLoading, error } = useAppInfo();
 
   useEffect(() => {
@@ -80,6 +85,18 @@ function AuthGate() {
             Erneut versuchen
           </button>
         </div>
+      </>
+    );
+  }
+  // Einladungslink ohne Anmeldung: als Gast beitreten (Anmelden ist dort auch möglich)
+  const guestToken = !app.setupRequired && !app.user ? joinToken(location.pathname) : null;
+  if (guestToken) {
+    return (
+      <>
+        <PublicTheme />
+        <Suspense fallback={null}>
+          <GuestJoinPage token={guestToken} />
+        </Suspense>
       </>
     );
   }

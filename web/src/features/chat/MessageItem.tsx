@@ -65,7 +65,8 @@ function MessageItemImpl(p: MessageItemProps) {
     const starterId = m.senderId ?? sys?.actorId ?? null;
     const starter = starterId === me ? 'dir' : (starterId ? users.get(starterId)?.name : undefined) ?? m.senderName ?? 'jemandem';
     const count = call.participantIds.length;
-    const missed = !!sysCall && !!call.endedAt && count <= 1;
+    const guests = call.guestCount ?? 0;
+    const missed = !!sysCall && !!call.endedAt && count + guests <= 1;
     const join = p.onJoinCall ?? (p.callJoinUrl ? () => window.open(p.callJoinUrl!, '_blank', 'noopener,noreferrer') : null);
     return (
       <div id={`msg-${m.id}`} className="my-2 flex justify-center px-4">
@@ -79,6 +80,7 @@ function MessageItemImpl(p: MessageItemProps) {
               Gestartet von {starter} um {timeOf(call.startedAt)}
               {call.endedAt && !missed && ` · ${callDuration(call.startedAt, call.endedAt)}`}
               {count > 0 && ` · ${count} ${count === 1 ? 'Person' : 'Personen'}`}
+              {guests > 0 && ` · ${guests} ${guests === 1 ? 'Gast' : 'Gäste'}`}
             </span>
           </span>
           {ongoing && join && (

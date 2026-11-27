@@ -115,6 +115,8 @@ export interface ChatCallInfo {
   /** Wer teilgenommen hat (soweit bekannt) */
   participantIds: string[];
   title?: string | null;
+  /** Zahl der Gäste ohne Kuvert-Konto (Kuvert-Anrufe) */
+  guestCount?: number;
 }
 
 /** Laufender Anruf in einer Unterhaltung (Mattermost Calls oder Kuvert-Anruf) */

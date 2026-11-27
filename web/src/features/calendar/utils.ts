@@ -77,5 +77,34 @@ export const REMINDER_OPTIONS: { value: string; label: string }[] = [
 export function meetingLabel(provider?: string): string {
   if (provider === 'teams') return 'Teams-Besprechung';
   if (provider === 'meet') return 'Google Meet';
+  if (provider === 'kuvert') return 'Kuvert-Anruf';
   return 'Online-Meeting';
+}
+
+/** Link zu einem Kuvert-Anruf dieses Servers (/join/…) */
+const JOIN_LINK = /https?:\/\/[^\s<>"')\]]+\/join\/[\w-]{16,64}/g;
+
+/** Pfad im eigenen Kuvert (z. B. /join/abc…), wenn der Link auf diesen Server zeigt – sonst null */
+export function kuvertJoinPath(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return u.origin === window.location.origin && /^\/join\/[\w-]{16,64}\/?$/.test(u.pathname) ? u.pathname : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Kuvert-Anruf-Link aus Ort oder Beschreibung eines Termins */
+export function kuvertMeetingUrl(ev: Pick<CalendarEvent, 'location' | 'description'>): string | null {
+  for (const text of [ev.location, ev.description]) {
+    for (const m of text?.match(JOIN_LINK) ?? []) if (kuvertJoinPath(m)) return m;
+  }
+  return null;
+}
+
+/** Online-Besprechung eines Termins: vom Anbieter (Teams, Meet …) oder ein Kuvert-Anruf */
+export function eventMeeting(ev: CalendarEvent): { url: string; provider?: string } | null {
+  if (ev.onlineMeetingUrl) return { url: ev.onlineMeetingUrl, provider: ev.onlineMeetingProvider };
+  const url = kuvertMeetingUrl(ev);
+  return url ? { url, provider: 'kuvert' } : null;
 }

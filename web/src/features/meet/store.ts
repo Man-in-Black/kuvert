@@ -1,7 +1,7 @@
 /**
  * Zustand des eigenen Kuvert-Anrufs (höchstens einer gleichzeitig): wird beim Beitreten gesetzt,
- * von <CallHost> angezeigt und beim Auflegen geleert. Bewusst außerhalb von React Query,
- * damit Chat und Anruf-Fenster ohne Umwege darauf zugreifen.
+ * von <CallHost> bzw. der Gastseite angezeigt und beim Auflegen geleert. Bewusst außerhalb von
+ * React Query, damit Chat, Kalender und Anruf-Fenster ohne Umwege darauf zugreifen.
  */
 import { useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
@@ -15,6 +15,8 @@ export interface ActiveCall extends MeetJoinResult {
   minimized: boolean;
   /** Whiteboard geöffnet */
   whiteboard: boolean;
+  /** Einladen-Bereich (Personen, Gäste, Wartebereich) geöffnet */
+  people: boolean;
   /** Jemand anderes war schon im Anruf (sonst endet er mit „Keine Antwort“) */
   othersJoined: boolean;
   joinedAt: number;
@@ -22,7 +24,7 @@ export interface ActiveCall extends MeetJoinResult {
 
 let state: ActiveCall | null = null;
 /** Beitritt läuft (Doppelklicks abfangen) */
-let joining: string | null = null;
+let joining = false;
 const listeners = new Set<() => void>();
 
 function set(next: ActiveCall | null) {
@@ -46,26 +48,46 @@ export const callState = {
   },
 };
 
-/** Anruf in einer Kuvert-Unterhaltung starten oder beitreten */
-export async function joinCall(conversationId: string, opts: { video?: boolean } = {}): Promise<void> {
-  if (state?.conversationId === conversationId) {
+/** Zugang übernehmen und Anruf-Fenster öffnen */
+export function startCall(r: MeetJoinResult, opts: { video?: boolean } = {}) {
+  set({ ...r, video: !!opts.video, minimized: false, whiteboard: false, people: false, othersJoined: false, joinedAt: Date.now() });
+}
+
+async function join(path: string, opts: { video?: boolean }, sameCall: (c: ActiveCall) => boolean): Promise<boolean> {
+  if (state && sameCall(state)) {
     callState.patch({ minimized: false });
-    return;
+    return true;
   }
-  if (joining) return;
+  if (joining) return false;
   if (state) {
     toast.error('Du bist bereits in einem Anruf – bitte zuerst auflegen.');
-    return;
+    return false;
   }
-  joining = conversationId;
+  joining = true;
   try {
-    const r = await api<MeetJoinResult>(`/meet/calls/${encodeURIComponent(conversationId)}/join`, { method: 'POST' });
-    set({ ...r, video: !!opts.video, minimized: false, whiteboard: false, othersJoined: false, joinedAt: Date.now() });
+    startCall(await api<MeetJoinResult>(path, { method: 'POST' }), opts);
+    return true;
   } catch (err) {
     toast.error(errorMessage(err));
+    return false;
   } finally {
-    joining = null;
+    joining = false;
   }
+}
+
+/** Anruf in einer Kuvert-Unterhaltung starten oder beitreten */
+export function joinCall(conversationId: string, opts: { video?: boolean } = {}): Promise<boolean> {
+  return join(`/meet/calls/${encodeURIComponent(conversationId)}/join`, opts, (c) => c.conversationId === conversationId);
+}
+
+/** Laufendem Anruf beitreten, in den man geholt wurde */
+export function joinCallById(callId: string, opts: { video?: boolean } = {}): Promise<boolean> {
+  return join(`/meet/c/${encodeURIComponent(callId)}/join`, opts, (c) => c.callId === callId);
+}
+
+/** Über einen Einladungs- bzw. Meeting-Link beitreten (angemeldet) */
+export function joinByLink(token: string, opts: { video?: boolean } = {}): Promise<boolean> {
+  return join(`/meet/links/${encodeURIComponent(token)}/join`, opts, () => false);
 }
 
 /** Auflegen (lokal sofort, Server im Hintergrund) */
@@ -73,12 +95,17 @@ export function leaveCall() {
   const c = state;
   if (!c) return;
   set(null);
-  void api(`/meet/calls/${encodeURIComponent(c.conversationId)}/leave`, { method: 'POST' }).catch(() => undefined);
+  void api(c.leavePath, { method: 'POST' }).catch(() => undefined);
 }
 
 /** Klingeln ablehnen */
 export function declineCall(conversationId: string) {
   void api(`/meet/calls/${encodeURIComponent(conversationId)}/decline`, { method: 'POST' }).catch(() => undefined);
+}
+
+/** Einladung („Person hinzufügen“) ablehnen */
+export function declineInvite(callId: string) {
+  void api(`/meet/c/${encodeURIComponent(callId)}/decline-invite`, { method: 'POST' }).catch(() => undefined);
 }
 
 /** Beim Schließen des Fensters abmelden, damit die anderen nicht auf das Abgleich-Intervall warten */
@@ -87,7 +114,7 @@ if (typeof window !== 'undefined') {
     if (!state) return;
     try {
       // sendBeacon kann keine eigenen Header – fetch mit keepalive schon (CSRF-Header nötig)
-      void fetch(`/api/meet/calls/${encodeURIComponent(state.conversationId)}/leave`, {
+      void fetch(`/api${state.leavePath}`, {
         method: 'POST',
         keepalive: true,
         credentials: 'same-origin',

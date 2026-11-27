@@ -26,13 +26,16 @@ import {
 import { ConnectionState, DisconnectReason, MediaDeviceFailure, Room, RoomEvent, Track, VideoPresets } from 'livekit-client';
 import '@livekit/components-styles';
 import { toast } from 'sonner';
-import { Maximize2, Mic, MicOff, Minimize2, MonitorUp, MonitorX, PenLine, PhoneOff, Users, Video, VideoOff } from 'lucide-react';
-import { useFeature } from '@/lib/queries';
+import { Maximize2, Mic, MicOff, Minimize2, MonitorUp, MonitorX, PenLine, PhoneOff, UserPlus, Users, Video, VideoOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { callState, leaveCall, type ActiveCall } from './store';
 import { WhiteboardSync } from './whiteboard-sync';
+import { lobbyWaiting, PeoplePanel, useMeetCallState } from './People';
 
 const Whiteboard = lazy(() => import('./Whiteboard'));
+
+/** Zugriff auf Mikrofon/Kamera möglich? (nur in sicheren Kontexten: HTTPS bzw. localhost) */
+const canCapture = () => typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
 
 /** Fehler beim Starten von Mikrofon/Kamera (getUserMedia) – kein Grund, den Anruf zu verlassen */
 const DEVICE_ERRORS = new Set([
@@ -45,6 +48,40 @@ const DEVICE_ERRORS = new Set([
   'OverconstrainedError',
   'DeviceUnsupportedError',
 ]);
+
+/**
+ * Verbindungsfehler von LiveKit verständlich machen. Die Signalisierung läuft über Kuvert (/api/meet/lk),
+ * Ton und Bild dagegen direkt zum LiveKit-Server (WebRTC, UDP 7882 / TCP 7881) – scheitert nur Letzteres,
+ * liegt es an den Ports, nicht am Proxy.
+ */
+function connectionErrorText(err: Error): { title: string; description: string } | null {
+  const reason = err.name === 'ConnectionError' ? (err as Error & { reasonName?: string }).reasonName : undefined;
+  if (reason === 'Cancelled' || reason === 'LeaveRequest') return null;
+  if (/pc connection/i.test(err.message) || reason === 'Timeout') {
+    return {
+      title: 'Keine Verbindung für Ton und Bild',
+      description:
+        'Die Anmeldung beim Anruf hat geklappt, aber der LiveKit-Server ist für Ton und Bild nicht direkt erreichbar. ' +
+        'Administration: UDP 7882 und TCP 7881 zum LiveKit-Server freigeben bzw. weiterleiten – ein Cloudflare-Tunnel ' +
+        'oder Reverse Proxy leitet diesen Verkehr nicht weiter.',
+    };
+  }
+  if (reason === 'NotAllowed') {
+    return {
+      title: 'Zugang zum Anruf abgelehnt',
+      description: 'LiveKit hat die Anmeldung abgelehnt. Administration: API-Schlüssel und Geheimnis unter Admin → Anrufe prüfen.',
+    };
+  }
+  if (reason === 'ServerUnreachable' || reason === 'WebSocket' || reason === 'ServiceNotFound') {
+    return {
+      title: 'Anruf-Server nicht erreichbar',
+      description:
+        'Die Verbindung zu LiveKit kam nicht zustande. Administration: Läuft LiveKit (Admin → Anrufe → Verbindung testen), ' +
+        'und leitet ein vorgeschalteter Proxy WebSockets für /api/meet/lk weiter?',
+    };
+  }
+  return { title: 'Anruf fehlgeschlagen', description: err.message || 'Unbekannter Fehler beim Verbinden' };
+}
 
 export default function CallRoom({ call, title }: { call: ActiveCall; title: string }) {
   // Eigener Room je Beitritt: Optionen für Videoqualität und sparsame Übertragung
@@ -59,17 +96,30 @@ export default function CallRoom({ call, title }: { call: ActiveCall; title: str
     [call.token],
   );
 
+  // Ohne sicheren Kontext (HTTPS) gibt es keinen Zugriff auf Mikrofon und Kamera: nur zuhören und zusehen
+  useEffect(() => {
+    if (!canCapture()) {
+      toast.warning('Mikrofon und Kamera sind nicht verfügbar', {
+        id: 'meet-no-capture',
+        description: 'Der Browser erlaubt den Zugriff nur über HTTPS. Du kannst zuhören und zusehen.',
+        duration: 15_000,
+      });
+    }
+  }, []);
+
   return (
     <LiveKitRoom
       room={room}
       serverUrl={call.url}
       token={call.token}
       connect
-      audio
-      video={call.video}
+      audio={canCapture()}
+      video={canCapture() && call.video}
       data-lk-theme="default"
       onDisconnected={(reason) => {
-        if (reason !== undefined && reason !== DisconnectReason.CLIENT_INITIATED && reason !== DisconnectReason.ROOM_DELETED) {
+        if (reason === DisconnectReason.PARTICIPANT_REMOVED) toast('Du wurdest aus dem Anruf entfernt', { id: 'meet-removed' });
+        else if (reason === DisconnectReason.ROOM_DELETED && call.guest) toast('Der Anruf wurde beendet', { id: 'meet-ended' });
+        else if (reason !== undefined && reason !== DisconnectReason.CLIENT_INITIATED && reason !== DisconnectReason.ROOM_DELETED) {
           toast.error('Verbindung zum Anruf verloren');
         }
         leaveCall();
@@ -77,10 +127,9 @@ export default function CallRoom({ call, title }: { call: ActiveCall; title: str
       onError={(err) => {
         // Mikrofon/Kamera verweigert oder nicht vorhanden: im Anruf bleiben (zuhören, Whiteboard …);
         // die Meldung dazu kommt über onMediaDeviceFailure
-        if (DEVICE_ERRORS.has(err.name)) return;
-        toast.error(`Anruf: ${err.message || 'Verbindung fehlgeschlagen'}`, {
-          description: 'Ist LiveKit erreichbar und leitet ein vorgeschalteter Proxy WebSockets weiter?',
-        });
+        if (DEVICE_ERRORS.has(err.name) || (err instanceof TypeError && /getUserMedia|mediaDevices/.test(err.message))) return;
+        const text = connectionErrorText(err);
+        if (text) toast.error(text.title, { description: text.description, duration: 15_000 });
         leaveCall();
       }}
       onMediaDeviceFailure={(failure, kind) => {
@@ -118,8 +167,9 @@ function CallContent({ call, title }: { call: ActiveCall; title: string }) {
   const state = useConnectionState();
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
-  const allowScreen = useFeature('meetScreenShare');
-  const allowWhiteboard = useFeature('meetWhiteboard');
+  const allowScreen = call.allowScreenShare;
+  const allowWhiteboard = call.allowWhiteboard;
+  const meetState = useMeetCallState(call);
   const [wbActivity, setWbActivity] = useState(false);
   const elapsed = useElapsed(call.joinedAt);
 
@@ -181,7 +231,7 @@ function CallContent({ call, title }: { call: ActiveCall; title: string }) {
             <span className="font-medium">{title}</span>
             <span className="text-white/60"> · {waiting ? 'Klingelt …' : elapsed}</span>
           </span>
-          <MicToggle small />
+          {canCapture() && <MicToggle small />}
           <RoundButton small label="Vergrößern" onClick={() => callState.patch({ minimized: false })}>
             <Maximize2 className="h-4 w-4" />
           </RoundButton>
@@ -202,7 +252,7 @@ function CallContent({ call, title }: { call: ActiveCall; title: string }) {
       <div className="flex h-full min-h-0 flex-col gap-2 xl:flex-row">
         <div className="min-h-0 min-w-0 flex-1">
           <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-white/60">Whiteboard wird geladen …</div>}>
-            <Whiteboard sync={sync} conversationId={call.conversationId} myName={localParticipant.name || 'Jemand'} />
+            <Whiteboard sync={sync} conversationId={call.guest ? null : call.conversationId} myName={localParticipant.name || 'Jemand'} />
           </Suspense>
         </div>
         <div className="h-28 shrink-0 xl:h-auto xl:w-56">
@@ -242,36 +292,49 @@ function CallContent({ call, title }: { call: ActiveCall; title: string }) {
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">{title}</span>
           <span className="block truncate text-xs text-white/60">
-            {connecting ? 'Verbinde …' : waiting ? 'Klingelt … warte auf die anderen' : elapsed}
+            {connecting ? 'Verbinde …' : waiting ? (call.conversationId ? 'Klingelt … warte auf die anderen' : 'Warte auf die anderen …') : elapsed}
           </span>
         </span>
         <span className="flex items-center gap-1 text-xs text-white/70" title="Im Anruf">
           <Users className="h-4 w-4" />
           {participants.length}
         </span>
-        <RoundButton label="Verkleinern – Kuvert weiter benutzen" onClick={() => callState.patch({ minimized: true })}>
-          <Minimize2 className="h-4 w-4" />
-        </RoundButton>
+        {!call.guest && (
+          <RoundButton label="Verkleinern – Kuvert weiter benutzen" onClick={() => callState.patch({ minimized: true })}>
+            <Minimize2 className="h-4 w-4" />
+          </RoundButton>
+        )}
       </header>
 
-      {/* Bühne */}
-      <div className="min-h-0 flex-1 px-2 sm:px-3">{stage}</div>
+      {/* Bühne, daneben (bzw. auf kleinen Bildschirmen darüber) der Einladen-Bereich */}
+      <div className="relative flex min-h-0 flex-1 gap-2 px-2 sm:px-3">
+        <div className="min-h-0 min-w-0 flex-1">{stage}</div>
+        {call.people && call.canInvite && (
+          <div className="absolute inset-0 z-20 px-2 sm:px-3 md:static md:w-80 md:shrink-0 md:px-0">
+            <PeoplePanel call={call} state={meetState} />
+          </div>
+        )}
+      </div>
 
       {/* Steuerleiste */}
       <footer className="flex shrink-0 flex-wrap items-center justify-center gap-2 px-3 py-3">
-        <MicToggle />
-        <MediaDeviceMenu kind="audioinput" className="kuvert-call-device" title="Mikrofon wählen" />
-        <TrackToggle
-          source={Track.Source.Camera}
-          showIcon={false}
-          className={toggleClass}
-          title="Kamera an/aus"
-          onDeviceError={() => toast.error('Kamera lässt sich nicht starten')}
-        >
-          <CameraIcon />
-        </TrackToggle>
-        <MediaDeviceMenu kind="videoinput" className="kuvert-call-device" title="Kamera wählen" />
-        {allowScreen && (
+        {canCapture() && (
+          <>
+            <MicToggle />
+            <MediaDeviceMenu kind="audioinput" className="kuvert-call-device" title="Mikrofon wählen" />
+            <TrackToggle
+              source={Track.Source.Camera}
+              showIcon={false}
+              className={toggleClass}
+              title="Kamera an/aus"
+              onDeviceError={() => toast.error('Kamera lässt sich nicht starten')}
+            >
+              <CameraIcon />
+            </TrackToggle>
+            <MediaDeviceMenu kind="videoinput" className="kuvert-call-device" title="Kamera wählen" />
+          </>
+        )}
+        {allowScreen && !!navigator.mediaDevices?.getDisplayMedia && (
           <TrackToggle
             source={Track.Source.ScreenShare}
             showIcon={false}
@@ -296,6 +359,16 @@ function CallContent({ call, title }: { call: ActiveCall; title: string }) {
             }}
           >
             <PenLine className="h-5 w-5" />
+          </RoundButton>
+        )}
+        {call.canInvite && (
+          <RoundButton
+            label={call.people ? 'Personen ausblenden' : 'Personen und Gäste einladen'}
+            active={call.people}
+            dot={!call.people && lobbyWaiting(meetState)}
+            onClick={() => callState.patch({ people: !call.people })}
+          >
+            <UserPlus className="h-5 w-5" />
           </RoundButton>
         )}
         <RoundButton danger label="Auflegen" onClick={leaveCall} className="ml-2 w-16">

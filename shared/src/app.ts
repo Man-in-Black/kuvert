@@ -5,6 +5,7 @@ import type { MessageSummary } from './mail';
 import type { ChatCall, ChatMessage, ChatRing } from './chat';
 import type { TriageInfo } from './triage';
 import type { ThreeCxIncomingCall } from './telephony';
+import type { MeetCallState } from './meet';
 
 export interface User {
   id: string;
@@ -163,6 +164,10 @@ export type ServerEvent =
   | { type: 'chat.categories'; connectionId: string }
   /** Anruf begonnen/geändert/beendet (call null); ring = jemand ruft mich an; declinedBy = Gegenüber hat abgelehnt (Kuvert-Anruf) */
   | { type: 'chat.call'; conversationId: string; call: ChatCall | null; ring?: ChatRing; declinedBy?: string }
+  /** Einladung in einen laufenden Kuvert-Anruf (auch ohne Mitgliedschaft in der Unterhaltung); active=false: vorbei/zurückgenommen */
+  | { type: 'meet.invite'; callId: string; title: string; caller: string; active: boolean }
+  /** Stand des Anrufs für die Kuvert-Teilnehmenden: Wartebereich, Gäste, Gast-Link */
+  | { type: 'meet.state'; state: MeetCallState }
   /** 3CX: Anruf an der eigenen Nebenstelle klingelt, wurde angenommen, ist vorbei oder verpasst */
   | { type: 'threecx.call'; call: ThreeCxIncomingCall }
   /** Zeiterfassung: eigene Einträge, gemeinsame Kunden/Projekte/Tätigkeiten oder Import-Fortschritt geändert */

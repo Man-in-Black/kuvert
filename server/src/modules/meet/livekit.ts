@@ -100,6 +100,16 @@ export const livekit = {
     }
   },
 
+  /** Teilnehmer aus dem Raum werfen (z. B. Gast entfernen); fehlt er schon, ist das kein Fehler */
+  async removeParticipant(room: string, identity: string): Promise<void> {
+    try {
+      await roomService(meetConfig.credentials(), 'RemoveParticipant', { room, identity }, room);
+    } catch (err) {
+      if (err instanceof AppError && err.code === 'livekit_not_found') return;
+      throw err;
+    }
+  },
+
   async deleteRoom(room: string): Promise<void> {
     try {
       await roomService(meetConfig.credentials(), 'DeleteRoom', { room }, room);

@@ -1,6 +1,6 @@
 /**
- * Anrufe im Team-Chat (Server-Modul "meet", LiveKit): Dienst für Klingeln und Anruf-Fenster sowie
- * Admin-Seite „Anrufe“. Die Knöpfe zum Anrufen stecken im Chat (ConversationView).
+ * Anrufe im Team-Chat (Server-Modul "meet", LiveKit): Dienst für Klingeln und Anruf-Fenster,
+ * Seite für Einladungslinks sowie Admin-Seite „Anrufe“. Die Knöpfe zum Anrufen stecken im Chat (ConversationView).
  * Die Admin-Seite ist auch ohne aktives Feature erreichbar, sonst ließe sich die Anbindung nie einrichten.
  */
 import { lazy, Suspense } from 'react';
@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui';
 import { CallHost } from './CallHost';
 
 const AdminLazy = lazy(() => import('./MeetAdmin').then((m) => ({ default: m.MeetAdminSection })));
+const JoinLazy = lazy(() => import('./JoinPages').then((m) => ({ default: m.MemberJoinPage })));
 
 function MeetAdmin() {
   return (
@@ -26,11 +27,21 @@ export const meetAdminModule: WebModule = {
   admin: [{ id: 'meet', label: 'Anrufe', icon: Video, order: 63, component: MeetAdmin }],
 };
 
-/** Klingeln und Anruf-Fenster nur bei eingerichteter Anbindung */
+/** Klingeln, Anruf-Fenster und Einladungslinks (/join/<token>) nur bei eingerichteter Anbindung */
 const mod: WebModule = {
   id: 'meet',
   feature: 'meet',
   services: [CallHost],
+  routes: [
+    {
+      path: 'join/:token',
+      element: (
+        <Suspense fallback={<Skeleton className="m-6 h-40 w-full max-w-md rounded-2xl" />}>
+          <JoinLazy />
+        </Suspense>
+      ),
+    },
+  ],
 };
 
 export default mod;

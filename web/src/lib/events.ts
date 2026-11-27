@@ -11,28 +11,32 @@ const handlers = new Set<Handler>();
 let source: EventSource | null = null;
 let retry = 0;
 
-const TYPES: ServerEvent['type'][] = [
-  'hello',
-  'ping',
-  'mail.new',
-  'mail.changed',
-  'mail.triage',
-  'calendar.reminder',
-  'calendar.changed',
-  'account.status',
-  'send.status',
-  'chat.message',
-  'chat.message.updated',
-  'chat.conversation',
-  'chat.read',
-  'chat.typing',
-  'chat.presence',
-  'chat.connection',
-  'chat.categories',
-  'chat.call',
-  'threecx.call',
-  'timetrack.changed',
-];
+/** Alle Ereignistypen – als Record, damit der Typecheck bei einem neuen ServerEvent-Typ auf das Fehlen hinweist */
+const TYPE_SET: Record<ServerEvent['type'], true> = {
+  hello: true,
+  ping: true,
+  'mail.new': true,
+  'mail.changed': true,
+  'mail.triage': true,
+  'calendar.reminder': true,
+  'calendar.changed': true,
+  'account.status': true,
+  'send.status': true,
+  'chat.message': true,
+  'chat.message.updated': true,
+  'chat.conversation': true,
+  'chat.read': true,
+  'chat.typing': true,
+  'chat.presence': true,
+  'chat.connection': true,
+  'chat.categories': true,
+  'chat.call': true,
+  'threecx.call': true,
+  'timetrack.changed': true,
+  'meet.invite': true,
+  'meet.state': true,
+};
+const TYPES = Object.keys(TYPE_SET) as ServerEvent['type'][];
 
 export function connectEvents() {
   if (source) return;

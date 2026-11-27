@@ -87,6 +87,8 @@ export type WebhookEvent = Exclude<
   | 'chat.connection'
   | 'chat.categories'
   | 'chat.call'
+  | 'meet.invite'
+  | 'meet.state'
   | 'threecx.call'
   | 'timetrack.changed'
 >;

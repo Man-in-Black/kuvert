@@ -45,6 +45,7 @@ function ConnectionCard({ data }: { data: MeetAdminConfig }) {
   const [apiSecret, setApiSecret] = useState('');
   const [screenShare, setScreenShare] = useState(data.screenShare);
   const [whiteboard, setWhiteboard] = useState(data.whiteboard);
+  const [guests, setGuests] = useState(data.guests);
   const [testResult, setTestResult] = useState<MeetTestResult | null>(null);
 
   useEffect(() => {
@@ -54,13 +55,14 @@ function ConnectionCard({ data }: { data: MeetAdminConfig }) {
     setApiKey(data.apiKey);
     setScreenShare(data.screenShare);
     setWhiteboard(data.whiteboard);
+    setGuests(data.guests);
   }, [data]);
 
   const save = useMutation({
     mutationFn: () =>
       api<MeetAdminConfig>('/meet/admin/config', {
         method: 'PUT',
-        body: { enabled, url, publicUrl, apiKey, screenShare, whiteboard, ...(apiSecret ? { apiSecret } : {}) },
+        body: { enabled, url, publicUrl, apiKey, screenShare, whiteboard, guests, ...(apiSecret ? { apiSecret } : {}) },
       }),
     onSuccess: (cfg) => {
       qc.setQueryData(key, cfg);
@@ -111,7 +113,15 @@ function ConnectionCard({ data }: { data: MeetAdminConfig }) {
               className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-sm ${testResult.ok ? 'border-success/30 bg-success/5' : 'border-danger/30 bg-danger/5 text-danger'}`}
             >
               {testResult.ok && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />}
-              <span>{testResult.message}</span>
+              <span>
+                {testResult.message}
+                {testResult.ok && (
+                  <span className="mt-0.5 block text-xs text-muted">
+                    Geprüft ist die Server-API. Ton und Bild gehen direkt zum LiveKit-Server – dafür müssen UDP 7882 und TCP 7881 von
+                    außen erreichbar sein (nicht über einen Cloudflare-Tunnel oder Reverse Proxy).
+                  </span>
+                )}
+              </span>
             </div>
           )}
           <div className="flex flex-wrap gap-2">
@@ -129,6 +139,11 @@ function ConnectionCard({ data }: { data: MeetAdminConfig }) {
         <div className="space-y-3">
           <Switch checked={screenShare} onChange={setScreenShare} label="Bildschirmfreigabe erlauben" />
           <Switch checked={whiteboard} onChange={setWhiteboard} label="Gemeinsames Whiteboard (Excalidraw) erlauben" />
+          <Switch checked={guests} onChange={setGuests} label="Gäste ohne Kuvert-Konto per Link erlauben" />
+          <p className="text-xs text-muted">
+            Gäste klopfen über einen Link an und kommen erst herein, wenn jemand aus Kuvert im Anruf sie zulässt. Links für
+            Kalendertermine (Meetings) bleiben gültig, bis das Meeting gelöscht wird.
+          </p>
           <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
             Speichern
           </Button>

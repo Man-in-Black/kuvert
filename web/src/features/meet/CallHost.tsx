@@ -12,7 +12,7 @@ import { useServerEvent } from '@/lib/events';
 import { playBeep, pushActiveHere, showSystemNotification } from '@/features/notifications/push';
 import { bumpUnseen } from '@/features/notifications/unseen';
 import { chatKeys, conversationTitle, isExternal, useChatSettings, useMe, useUserMap } from '@/features/chat/api';
-import { callState, declineCall, joinCall, leaveCall, useActiveCall } from './store';
+import { callState, declineCall, declineInvite, joinCall, joinCallById, leaveCall, useActiveCall } from './store';
 
 const CallRoom = lazy(() => import('./CallRoom'));
 
@@ -132,6 +132,63 @@ export function CallHost() {
     if (settings.sound) startRinging(id);
   });
 
+  // In einen laufenden Anruf geholt („Person hinzufügen“), auch ohne Mitglied der Unterhaltung zu sein
+  useServerEvent('meet.invite', (e) => {
+    const ringId = `invite-${e.callId}`;
+    const toastId = `meet-invite-${e.callId}`;
+    if (!e.active) {
+      stopRinging(ringId);
+      toast.dismiss(toastId);
+      return;
+    }
+    if (callState.get()?.callId === e.callId) return;
+    const title = `📞 ${e.caller} holt dich in einen Anruf`;
+    const url = `/?meetInvite=${e.callId}`;
+    if (alert(title, e.title, toastId, url)) {
+      toast(title, {
+        id: toastId,
+        description: e.title,
+        duration: 45_000,
+        action: {
+          label: 'Annehmen',
+          onClick: () => {
+            stopRinging(ringId);
+            void joinCallById(e.callId);
+          },
+        },
+        cancel: {
+          label: 'Ablehnen',
+          onClick: () => {
+            stopRinging(ringId);
+            declineInvite(e.callId);
+          },
+        },
+        onDismiss: () => stopRinging(ringId),
+        onAutoClose: () => stopRinging(ringId),
+      });
+    }
+    if (settings.sound) startRinging(ringId);
+  });
+
+  // Aus der Benachrichtigung einer Einladung geöffnet (/?meetInvite=<Anruf>)
+  const handledInvite = useRef<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const callId = params.get('meetInvite');
+    if (!callId) return;
+    params.delete('meetInvite');
+    navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : '' }, { replace: true });
+    if (handledInvite.current === callId) return;
+    handledInvite.current = callId;
+    toast('Anruf beitreten?', {
+      id: `meet-invite-${callId}`,
+      duration: 30_000,
+      action: { label: 'Beitreten', onClick: () => void joinCallById(callId) },
+      cancel: { label: 'Ablehnen', onClick: () => declineInvite(callId) },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
+
   // Aus einer Benachrichtigung geöffnet (/chat/<id>?call=join): Beitritt anbieten (Kamera/Mikrofon brauchen einen Klick)
   const handled = useRef<string | null>(null);
   useEffect(() => {
@@ -161,14 +218,17 @@ export function CallHost() {
   // Beim Beitreten Klingeln/Hinweise dieser Unterhaltung schließen
   useEffect(() => {
     if (!call) return;
+    stopRinging(`invite-${call.callId}`);
+    toast.dismiss(`meet-invite-${call.callId}`);
+    if (!call.conversationId) return;
     stopRinging(call.conversationId);
     toast.dismiss(`meet-ring-${call.conversationId}`);
     toast.dismiss(`meet-missed-${call.conversationId}`);
-  }, [call?.conversationId]);
+  }, [call?.callId]);
 
   if (!call) return null;
-  const conv = conversation(call.conversationId);
-  const title = conv ? conversationTitle(conv, me, users) : 'Anruf';
+  const conv = call.conversationId ? conversation(call.conversationId) : undefined;
+  const title = call.title || (conv ? conversationTitle(conv, me, users) : 'Anruf');
   return (
     <Suspense fallback={null}>
       <CallRoom call={call} title={title} />

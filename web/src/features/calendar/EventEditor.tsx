@@ -3,15 +3,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { addDays, addHours, differenceInMinutes, startOfHour } from 'date-fns';
 import { Info, Repeat, Video } from 'lucide-react';
-import type { AccountInfo, Attendee, CalendarEvent, CalendarInfo, EmailAddress, EventInput, ShowAs } from '@kuvert/shared';
+import type { AccountInfo, Attendee, CalendarEvent, CalendarInfo, EmailAddress, EventInput, MeetMeeting, ShowAs } from '@kuvert/shared';
 import { AddressInput } from '@/components/AddressInput';
 import { Button, Checkbox, Field, Input, Modal, Select, Textarea } from '@/components/ui';
-import { errorMessage } from '@/lib/api';
+import { api, errorMessage } from '@/lib/api';
+import { useFeature } from '@/lib/queries';
 import { calKey, calKeyOf, createEvent, invalidateEvents, updateEvent } from './api';
 import { LocationInput } from './LocationInput';
 import { isOccurrence, isSeriesMaster, splitSeries, type SplitContext } from './series';
 import { PRESET_LABELS, buildRRule, parseRRule, type RecurrencePreset, type RecurrenceState } from './rrule';
-import { REMINDER_OPTIONS, SHOW_AS_LABELS, eventDescription, meetingLabel, parseEventDate, toDateInput, toTimeInput } from './utils';
+import { REMINDER_OPTIONS, SHOW_AS_LABELS, eventDescription, eventMeeting, meetingLabel, parseEventDate, toDateInput, toTimeInput } from './utils';
 
 export interface EditorInit {
   event?: CalendarEvent;
@@ -139,6 +140,10 @@ export function EventEditor({
     return [...m.entries()];
   }, [writable]);
   const calendar = calendars.find((c) => calKeyOf(c) === s.calendarKey);
+  // Kuvert-Anruf (Meeting mit festem Link) – für jeden Kalender, auch ohne Teams/Meet beim Anbieter
+  const meetAvailable = useFeature('meet');
+  const existingMeeting = editing ? eventMeeting(editing) : null;
+  const [addKuvertCall, setAddKuvertCall] = useState(false);
 
   /** Beim Verschieben des Beginns die Dauer beibehalten */
   const shiftStart = (date: string, time: string) => {
@@ -171,6 +176,14 @@ export function EventEditor({
     }
     setSaving(true);
     try {
+      if (addKuvertCall && !existingMeeting) {
+        // Meeting anlegen und den Link in Beschreibung (und Ort, falls leer) eintragen – so bekommen ihn auch Eingeladene
+        const m = await api<MeetMeeting>('/meet/meetings', { method: 'POST', body: { title: input.title || 'Kuvert-Anruf' } });
+        const line = `Kuvert-Anruf: ${m.url}`;
+        input.description = input.description?.trim() ? `${input.description.trimEnd()}\n\n${line}` : line;
+        if (!input.location?.trim()) input.location = m.url;
+        delete input.onlineMeeting;
+      }
       let result: CalendarEvent;
       let meetingRequested = false;
       if (split) {
@@ -328,6 +341,17 @@ export function EventEditor({
             ) : (
               <Checkbox checked={s.onlineMeeting} onChange={(v) => set('onlineMeeting', v)} label={`${meetingLabel(calendar.onlineMeetingProvider)} hinzufügen`} />
             )}
+          </div>
+        )}
+
+        {meetAvailable && !existingMeeting && !s.onlineMeeting && (editing?.isOrganizer ?? true) !== false && (
+          <div className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2">
+            <Video className="h-4 w-4 text-primary" />
+            <Checkbox
+              checked={addKuvertCall}
+              onChange={setAddKuvertCall}
+              label="Kuvert-Anruf hinzufügen (Link für alle Teilnehmenden, auch Gäste ohne Konto)"
+            />
           </div>
         )}
 

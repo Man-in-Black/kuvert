@@ -33,7 +33,7 @@ Läuft als ein Docker-Container.
 | **API** | REST-API für alle Funktionen, persönliche **API-Tokens** mit Scopes (read/write/admin), interaktive Doku (OpenAPI/Swagger) unter `/api/docs`, **Webhooks** mit HMAC-Signatur (z. B. für n8n, Node-RED) |
 | **mailcow** | Admin: Postfächer, Domains, Aliasse, Quarantäne, Provisionierung (Postfach + Kuvert-Konto in einem Schritt). Benutzer: Kontingent, Wegwerf-Adressen, App-Passwörter, Quarantäne, Passwort ändern. Kontotyp „mailcow“ richtet IMAP/SMTP + SOGo-Kalender/Kontakte automatisch ein |
 | **Team-Chat** | Direktnachrichten und Gruppen zwischen Kuvert-Benutzern in Echtzeit (SSE): WYSIWYG-Eingabe mit Markdown-Kürzeln, @-Erwähnungen (Personen, @all), Dateien & Bilder, Antworten, Reaktionen, Bearbeiten/Löschen, Lesebestätigungen, „schreibt …“, Online-Status, Suche, Stummschalten/Anheften, Web Push, Webhook `chat.message`; zusätzlich **Mattermost, Nextcloud Talk und Microsoft Teams** in derselben Oberfläche |
-| **Anrufe** | Audio- und Videoanrufe im Team-Chat (direkt und in Gruppen) über einen selbst gehosteten LiveKit-Server: **Bildschirmfreigabe**, gemeinsames **Whiteboard** (Excalidraw, als Bild in den Chat stellbar), Klingeln mit Annehmen/Ablehnen, Web Push, verpasste Anrufe mit „Zurückrufen“, Anruf-Karte mit Dauer im Verlauf, verkleinerbares Anruf-Fenster |
+| **Anrufe** | Audio- und Videoanrufe im Team-Chat (direkt und in Gruppen) über einen selbst gehosteten LiveKit-Server: **Bildschirmfreigabe**, gemeinsames **Whiteboard** (Excalidraw, als Bild in den Chat stellbar), Klingeln mit Annehmen/Ablehnen, Web Push, verpasste Anrufe mit „Zurückrufen“, Anruf-Karte mit Dauer im Verlauf, verkleinerbares Anruf-Fenster; weitere Personen dazuholen, **Gäste ohne Konto** per Link mit Wartebereich, **Meeting-Links im Kalender** |
 | **Mail-Archiver** | Archiv durchsuchen (Volltext, Zeitraum, Konto, Ordner), Mails lesen, Anhänge/.eml laden, aus dem Archiv weiterleiten oder antworten – per persönlichem API-Schlüssel |
 | **3CX** | Click-to-Call über die eigene Nebenstelle (3CX V20): Klick auf eine Telefonnummer startet den Anruf; eingehende Anrufe in Echtzeit mit Namen aus den Kontakten, verpasste mit „Zurückrufen“; Bereich **Telefon** mit Wahlfeld, laufendem Gespräch (Auflegen), eigenem Status, Anrufliste, 3CX-Telefonbuch und Kollegen mit Status; Zuordnung der Nebenstellen durch den Admin – auch automatisch per E-Mail-Adresse |
 | **Zeiterfassung** | Timer mit Start/Stopp – auch mehrere gleichzeitig, laufende Timer links im Menü sichtbar (links als Bereich **Zeiterfassung**, rechts als Panel in der Seitenleiste), Aufrunden auf 15 Minuten (einstellbar), Projektsuche auch nach Kunden, Zeiten nachtragen und bearbeiten (Dauer direkt, ±15 min, Zeitleiste), Wochen-/Monats-/Jahresansicht mit Tagessummen, gemeinsame Kunden → Projekte → Tätigkeiten mit Stundensätzen, Schlagworte, Auswertung mit Beträgen und CSV-Export; **Import aus Kimai 2** (API-Token oder API-Passwort, wiederholbar ohne Dubletten) |
@@ -332,6 +332,20 @@ und nehmen per Klick an. Im Anruf: Mikrofon/Kamera samt Geräteauswahl, **Bildsc
 **Whiteboard** (Excalidraw – alle zeichnen gleichzeitig, Mauszeiger der anderen sichtbar, „In den Chat“ stellt die
 Zeichnung als Bild in die Unterhaltung) und Verkleinern, um Kuvert währenddessen weiter zu benutzen.
 Direktanrufe enden nach 45 s ohne Antwort; wer nicht dabei war, sieht „Verpasster Anruf“ mit „Zurückrufen“.
+
+**Personen und Gäste einladen** (Knopf 👤+ im Anruf):
+
+- *Person hinzufügen* holt weitere Kuvert-Benutzer in den laufenden Anruf – auch aus einer Direktnachricht, ohne dass
+  sie Mitglied der Unterhaltung werden. Sie klingeln wie bei einem Anruf.
+- *Gast-Link* für Personen ohne Kuvert-Konto: Der Gast öffnet `https://<kuvert>/join/…` im Browser, gibt seinen Namen ein
+  und klopft an. Wer aus Kuvert im Anruf ist, sieht „… möchte beitreten“ und lässt zu oder lehnt ab. Gäste haben Ton,
+  Video, Bildschirmfreigabe und Whiteboard, aber keinen Zugriff auf Chat oder Kuvert und lassen sich jederzeit entfernen.
+  Der Link gilt bis zum Ende des Anrufs und lässt sich vorher widerrufen.
+- **Kalender:** Im Termin-Editor legt „Kuvert-Anruf hinzufügen“ ein Meeting mit festem Link an und trägt ihn in
+  Beschreibung (und Ort) ein – so bekommen ihn auch externe Eingeladene. Angemeldete treten über den Link direkt bei,
+  Gäste klopfen an und warten, bis jemand aus Kuvert im Meeting ist und sie hereinlässt.
+- Gäste lassen sich unter *Admin → Anrufe* abschalten. Die Links bauen auf `PUBLIC_URL` auf – die Variable muss die
+  externe Adresse enthalten.
 
 Audio und Video laufen über einen eigenen **LiveKit-Server** (Open Source, SFU – auch für größere Gruppen):
 
