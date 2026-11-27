@@ -426,7 +426,13 @@ export default defineModule({
       const body = parse(z.object({ seq: z.number().int().positive().optional() }), req.body ?? {});
       if (isExternalId(req.params.id)) {
         const { bridge, remote } = extConv(req.user.id, req.params.id);
-        await bridge.markRead(remote);
+        try {
+          await bridge.markRead(remote);
+        } catch (err) {
+          // Dienst lehnt ab (z. B. Teams-Chat einer fremden Organisation) → Lesestand nur in Kuvert merken
+          req.log.info({ err, conversation: req.params.id }, 'Gelesen-Markieren beim Dienst fehlgeschlagen – nur in Kuvert gemerkt');
+          extPrefs.set(req.user.id, req.params.id, { readUntil: new Date().toISOString() });
+        }
         // Andere Tabs des Benutzers aktualisieren
         if (body.seq) publishTo([req.user.id], { type: 'chat.read', conversationId: req.params.id, userId: req.user.id, seq: body.seq });
         return { ok: true, seq: body.seq ?? null };

@@ -178,6 +178,19 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
     });
   }, [newestSeq, myMember?.lastReadSeq, me, qc, c.id]);
 
+  // Verlauf nicht ladbar (z. B. Teams-Chat einer fremden Organisation): Öffnen gilt trotzdem als gelesen
+  const failedRead = useRef<string | null>(null);
+  useEffect(() => {
+    if (!q.error || c.unread <= 0 || failedRead.current === c.id) return;
+    failedRead.current = c.id;
+    chatApi
+      .read(c.id)
+      .then(() => qc.invalidateQueries({ queryKey: chatKeys.conversations }))
+      .catch(() => {
+        failedRead.current = null;
+      });
+  }, [q.error, c.unread, c.id, qc]);
+
   useEffect(() => {
     const t = setTimeout(markRead, 400);
     const onVis = () => !document.hidden && markRead();
@@ -405,7 +418,14 @@ export function ConversationView({ conversation: c, onBack, jumpSeq, onJumpDone 
               <Spinner />
             </div>
           ) : q.error ? (
-            <div className="p-6 text-center text-sm text-danger">{errorMessage(q.error)}</div>
+            <div className="p-6 text-center text-sm">
+              <div className="text-danger">{errorMessage(q.error)}</div>
+              {c.source?.webUrl && (
+                <a className="mt-2 inline-flex items-center gap-1 text-primary hover:underline" href={c.source.webUrl} target="_blank" rel="noreferrer">
+                  In {c.source.type === 'teams' ? 'Teams' : c.source.label} öffnen <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
           ) : (
             <>
               {q.hasNextPage ? (

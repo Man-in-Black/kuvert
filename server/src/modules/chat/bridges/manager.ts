@@ -142,11 +142,13 @@ export class BridgeManager {
     return !!this.bridges.get(connectionOf(conversationId))?.setFavorite;
   }
 
-  /** Persönliche Einstellungen (stumm/angeheftet) übernehmen */
+  /** Persönliche Einstellungen (stumm/angeheftet, Lesestand in Kuvert) übernehmen */
   withPrefs(userId: string, c: ChatConversation, prefs = extPrefs.all(userId)): ChatConversation {
     const p = prefs.get(c.id);
     if (!p) return c;
-    return { ...c, muted: p.muted, pinned: this.hasFavorites(c.id) ? c.pinned : p.pinned };
+    // Nur in Kuvert als gelesen markiert: ungelesen erst wieder bei einer neueren Nachricht
+    const readLocally = !!p.readUntil && c.unread > 0 && (Date.parse(c.lastMessageAt) || 0) <= (Date.parse(p.readUntil) || 0);
+    return { ...c, muted: p.muted, pinned: this.hasFavorites(c.id) ? c.pinned : p.pinned, unread: readLocally ? 0 : c.unread };
   }
 
   /** Abschnitte der Seitenleiste aller Verbindungen, die welche haben (Mattermost) */

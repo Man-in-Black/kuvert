@@ -159,6 +159,18 @@ export function ConversationList({
       });
   }, [list, q, users, me, source]);
 
+  /** Ungelesene je Filter (ohne stummgeschaltete), für die Zähler an den Dienst-Filtern */
+  const unreadBySource = useMemo(() => {
+    const counts = new Map<string, number>();
+    const add = (key: string, n: number) => counts.set(key, (counts.get(key) ?? 0) + n);
+    for (const c of list ?? []) {
+      if (c.muted || c.unread <= 0) continue;
+      add('all', c.unread);
+      add(c.source ? c.source.connectionId : 'kuvert', c.unread);
+    }
+    return counts;
+  }, [list]);
+
   const sections = useMemo((): Section[] => {
     const sortBy = (items: ChatConversation[], mode: ChatCategory['sorting']) => {
       if (mode === 'manual') return items;
@@ -235,20 +247,28 @@ export function ConversationList({
         </div>
         {!!connections?.length && (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {[{ id: 'all', label: 'Alle' }, { id: 'kuvert', label: 'Kuvert' }, ...connections.map((c) => ({ id: c.id, label: c.label }))].map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setSource(f.id)}
-                title={f.label}
-                className={cn(
-                  'max-w-full truncate rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
-                  source === f.id ? 'border-primary/40 bg-primary-soft text-primary' : 'border-border text-muted hover:bg-hover',
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
+            {[{ id: 'all', label: 'Alle' }, { id: 'kuvert', label: 'Kuvert' }, ...connections.map((c) => ({ id: c.id, label: c.label }))].map((f) => {
+              const unread = unreadBySource.get(f.id) ?? 0;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setSource(f.id)}
+                  title={unread ? `${f.label} · ${unread} ungelesen` : f.label}
+                  className={cn(
+                    'flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
+                    source === f.id ? 'border-primary/40 bg-primary-soft text-primary' : 'border-border text-muted hover:bg-hover',
+                  )}
+                >
+                  <span className="truncate">{f.label}</span>
+                  {unread > 0 && (
+                    <span className="shrink-0 rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-4 tabular-nums text-primary-fg">
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

@@ -176,7 +176,7 @@ export const chatApi = {
   edit: (messageId: string, body: string) => api<ChatMessage>(`/chat/messages/${messageId}`, { method: 'PATCH', body: { body } }),
   remove: (messageId: string) => api<ChatMessage>(`/chat/messages/${messageId}`, { method: 'DELETE' }),
   react: (messageId: string, emoji: string) => api<ChatMessage>(`/chat/messages/${messageId}/reactions`, { body: { emoji } }),
-  read: (id: string, seq: number) => api<{ ok: boolean; seq: number | null }>(`/chat/conversations/${id}/read`, { body: { seq } }),
+  read: (id: string, seq?: number) => api<{ ok: boolean; seq: number | null }>(`/chat/conversations/${id}/read`, { body: seq ? { seq } : {} }),
   typing: (id: string) => api(`/chat/conversations/${id}/typing`, { method: 'POST', body: {} }),
   /* Verbundene Dienste */
   addConnection: (input: ChatConnectionInput) => api<ChatConnection>('/chat/connections', { body: input }),

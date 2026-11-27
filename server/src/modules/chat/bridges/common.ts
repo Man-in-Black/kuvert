@@ -87,6 +87,11 @@ export const bridgeMigrations = [
       );
     `,
   },
+  {
+    // Lesestand nur in Kuvert, falls der Dienst das Markieren ablehnt (z. B. Teams-Chats fremder Organisationen)
+    id: 'chat-003',
+    sql: `ALTER TABLE chat_ext_prefs ADD COLUMN read_until TEXT;`,
+  },
 ];
 
 export interface ConnectionRecord {
@@ -163,31 +168,43 @@ export const connectionStore = {
   },
 };
 
+export interface ExtPrefs {
+  muted: boolean;
+  pinned: boolean;
+  /** In Kuvert als gelesen markiert bis (ISO), wenn der Dienst das Markieren ablehnt */
+  readUntil: string | null;
+}
+
+interface ExtPrefsRow {
+  conversation_id: string;
+  muted: number;
+  pinned: number;
+  read_until: string | null;
+}
+
+const toPrefs = (r: ExtPrefsRow | undefined): ExtPrefs => ({ muted: !!r?.muted, pinned: !!r?.pinned, readUntil: r?.read_until ?? null });
+
 /** Stummschalten/Anheften externer Unterhaltungen – nur in Kuvert, der Dienst bleibt unberührt */
 export const extPrefs = {
-  all(userId: string): Map<string, { muted: boolean; pinned: boolean }> {
-    const rows = getDb().prepare('SELECT conversation_id, muted, pinned FROM chat_ext_prefs WHERE user_id = ?').all(userId) as {
-      conversation_id: string;
-      muted: number;
-      pinned: number;
-    }[];
-    return new Map(rows.map((r) => [r.conversation_id, { muted: !!r.muted, pinned: !!r.pinned }]));
+  all(userId: string): Map<string, ExtPrefs> {
+    const rows = getDb().prepare('SELECT conversation_id, muted, pinned, read_until FROM chat_ext_prefs WHERE user_id = ?').all(userId) as ExtPrefsRow[];
+    return new Map(rows.map((r) => [r.conversation_id, toPrefs(r)]));
   },
-  get(userId: string, conversationId: string): { muted: boolean; pinned: boolean } {
-    const r = getDb().prepare('SELECT muted, pinned FROM chat_ext_prefs WHERE user_id = ? AND conversation_id = ?').get(userId, conversationId) as
-      | { muted: number; pinned: number }
-      | undefined;
-    return { muted: !!r?.muted, pinned: !!r?.pinned };
+  get(userId: string, conversationId: string): ExtPrefs {
+    const r = getDb()
+      .prepare('SELECT conversation_id, muted, pinned, read_until FROM chat_ext_prefs WHERE user_id = ? AND conversation_id = ?')
+      .get(userId, conversationId) as ExtPrefsRow | undefined;
+    return toPrefs(r);
   },
-  set(userId: string, conversationId: string, patch: { muted?: boolean; pinned?: boolean }) {
+  set(userId: string, conversationId: string, patch: Partial<ExtPrefs>) {
     const cur = this.get(userId, conversationId);
-    const next = { muted: patch.muted ?? cur.muted, pinned: patch.pinned ?? cur.pinned };
+    const next = { muted: patch.muted ?? cur.muted, pinned: patch.pinned ?? cur.pinned, readUntil: patch.readUntil !== undefined ? patch.readUntil : cur.readUntil };
     getDb()
       .prepare(
-        `INSERT INTO chat_ext_prefs (user_id, conversation_id, muted, pinned) VALUES (?, ?, ?, ?)
-         ON CONFLICT(user_id, conversation_id) DO UPDATE SET muted = excluded.muted, pinned = excluded.pinned`,
+        `INSERT INTO chat_ext_prefs (user_id, conversation_id, muted, pinned, read_until) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, conversation_id) DO UPDATE SET muted = excluded.muted, pinned = excluded.pinned, read_until = excluded.read_until`,
       )
-      .run(userId, conversationId, next.muted ? 1 : 0, next.pinned ? 1 : 0);
+      .run(userId, conversationId, next.muted ? 1 : 0, next.pinned ? 1 : 0, next.readUntil);
   },
 };
 
