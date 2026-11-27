@@ -7,12 +7,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CheckCircle2, PlugZap, Timer, Trash2, Upload, XCircle } from 'lucide-react';
-import type { TtImportStatus, TtKimaiInput, TtKimaiTestResult } from '@kuvert/shared';
+import { CheckCircle2, Clock, PlugZap, Timer, Trash2, Upload, XCircle } from 'lucide-react';
+import type { TtImportStatus, TtKimaiInput, TtKimaiTestResult, TtSettings } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
-import { Button, Card, Field, Input, PageHeader, Progress, Skeleton, Tabs, useConfirm } from '@/components/ui';
+import { Button, Card, Field, Input, PageHeader, Progress, Select, Skeleton, Tabs, useConfirm } from '@/components/ui';
 import { formatDateTime } from '@/lib/utils';
-import { ttk, useKimai } from './api';
+import { ttk, useKimai, useTtSettings } from './api';
 
 const PHASES: Record<TtImportStatus['phase'], string> = {
   customers: 'Kunden',
@@ -213,14 +213,96 @@ function ImportStatusCard({ status }: { status: TtImportStatus }) {
   );
 }
 
-/** Einstellungsseite „Zeiterfassung“ */
+/** Einstellungsseite „Zeiterfassung“: Rundung und Kimai-Import */
 export function TimetrackSettingsSection() {
   return (
-    <div>
-      <PageHeader icon={<Timer />} title="Zeiterfassung" description="Daten aus Kimai übernehmen" />
+    <div className="space-y-5">
+      <PageHeader icon={<Timer />} title="Zeiterfassung" description="Rundung, Status-Schlagworte und Übernahme aus Kimai" />
+      <RoundingCard />
+      <QuickTagsCard />
       <Card title="Import aus Kimai" icon={<Upload />}>
         <KimaiImportForm />
       </Card>
     </div>
+  );
+}
+
+/** Status-Schlagworte (Haken „gebucht“ und Menü an jedem Eintrag) */
+function QuickTagsCard() {
+  const qc = useQueryClient();
+  const { data } = useTtSettings();
+  const [text, setText] = useState<string | null>(null);
+  const value = text ?? (data?.quickTags ?? []).join(', ');
+  const save = useMutation({
+    mutationFn: (quickTags: string[]) => api<TtSettings>('/timetrack/settings', { method: 'PUT', body: { quickTags } }),
+    onSuccess: (s) => {
+      qc.setQueryData(ttk.settings, s);
+      setText(null);
+      toast.success('Gespeichert');
+    },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
+  const list = [...new Set(value.split(',').map((t) => t.trim()).filter(Boolean))];
+  return (
+    <Card
+      title="Status-Schlagworte"
+      icon={<CheckCircle2 />}
+      description="Lassen sich in der Übersicht direkt an jedem Eintrag abhaken. Das erste ist der Haken neben der Dauer (z. B. „gebucht“), die übrigen stehen im Schlagwort-Menü."
+    >
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save.mutate(list.slice(0, 8));
+        }}
+      >
+        <Input value={value} onChange={(e) => setText(e.target.value)} placeholder="gebucht, Rechnung, fakturiert" className="min-w-[16rem] flex-1" aria-label="Status-Schlagworte" />
+        <Button type="submit" variant="primary" loading={save.isPending} disabled={!data || text === null}>
+          Speichern
+        </Button>
+      </form>
+      <p className="mt-2 text-xs text-muted">Durch Komma getrennt, höchstens 8. Reihenfolge zählt: das erste wird zum Haken.</p>
+    </Card>
+  );
+}
+
+const ROUND_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: 'Nicht runden (minutengenau)' },
+  { value: 5, label: 'Auf 5 Minuten aufrunden' },
+  { value: 10, label: 'Auf 10 Minuten aufrunden' },
+  { value: 15, label: 'Auf 15 Minuten aufrunden' },
+  { value: 30, label: 'Auf 30 Minuten aufrunden' },
+  { value: 60, label: 'Auf volle Stunden aufrunden' },
+];
+
+function RoundingCard() {
+  const qc = useQueryClient();
+  const { data } = useTtSettings();
+  const save = useMutation({
+    mutationFn: (roundUp: number) => api<TtSettings>('/timetrack/settings', { method: 'PUT', body: { roundUp } }),
+    onSuccess: (s) => {
+      qc.setQueryData(ttk.settings, s);
+      toast.success('Gespeichert');
+    },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
+  const value = data?.roundUp ?? 15;
+  return (
+    <Card title="Rundung" icon={<Clock />} description="Gilt beim Stoppen eines Timers und beim Speichern eines Eintrags. Aus Kimai importierte Zeiten bleiben, wie sie sind, bis du sie bearbeitest.">
+      <div className="flex flex-wrap items-center gap-3">
+        <Select value={String(value)} onChange={(e) => save.mutate(Number(e.target.value))} className="w-72 max-w-full" disabled={!data || save.isPending} aria-label="Rundung">
+          {ROUND_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+        {value > 0 && (
+          <span className="text-xs text-muted">
+            Beispiel: 6 min → {value} min, {value + 2} min → {value * 2} min
+          </span>
+        )}
+      </div>
+    </Card>
   );
 }

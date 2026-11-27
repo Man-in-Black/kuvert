@@ -1,17 +1,18 @@
 /**
- * Zeitbereich im Bearbeiten-Dialog: Datum, Von/Bis/Dauer (jeweils mit −15/+15),
- * Tageszeitleiste mit ziehbaren Griffen für Beginn und Ende, Schnellknöpfe
- * (−15 min … +1 h), Dauer-Vorgaben, „Ende = jetzt“ und Runden auf ¼ Stunde.
+ * Zeitbereich im Bearbeiten-Dialog: Datum, Von/Bis/Dauer (jeweils mit −15/+15; Uhrzeitauswahl
+ * im 5-Minuten-Raster), Tageszeitleiste mit ziehbaren Griffen für Beginn und Ende (15-Minuten-
+ * Schritte), Schnellknöpfe (−15 min … +1 h), Dauer-Vorgaben, „Ende = jetzt“ und Runden auf ¼ Stunde.
  *
  * Regeln: Beginn ändern lässt das Ende stehen (Dauer passt sich an), Ende oder Dauer
  * ändern verschiebt nur das Ende. Ein Ende vor dem Beginn gilt als „über Mitternacht“.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { addDays, format, isToday, isYesterday, startOfDay } from 'date-fns';
 import { Clock, Minus, Plus } from 'lucide-react';
-import { Button, Input, Select } from '@/components/ui';
+import { Input, Select } from '@/components/ui';
 import { cn } from '@/lib/utils';
-import { formatDuration, useNow } from './api';
+import { formatDuration, roundUpSeconds, useNow, useTtSettings } from './api';
 
 const MIN = 60;
 const DAY_MIN = 24 * 60;
@@ -54,6 +55,7 @@ export interface TimeRangeValue {
 export function TimeRangeEditor({ value, onChange }: { value: TimeRangeValue; onChange: (v: TimeRangeValue) => void }) {
   const running = value.duration == null;
   const now = useNow(running);
+  const roundUp = useTtSettings().data?.roundUp ?? 15;
   const { begin } = value;
   const duration = value.duration ?? Math.max(0, Math.floor((now - begin.getTime()) / 1000));
   const end = new Date(begin.getTime() + duration * 1000);
@@ -104,18 +106,18 @@ export function TimeRangeEditor({ value, onChange }: { value: TimeRangeValue; on
       {/* Von / Bis / Dauer */}
       <div className="grid gap-3 sm:grid-cols-3">
         <Labeled label="Von">
-          <TimeField value={format(begin, 'HH:mm')} onChange={(m) => setBegin(withTime(begin, m))} onNudge={(d) => setBegin(new Date(begin.getTime() + d * 60_000))} />
+          <TimeField label="Beginn" value={format(begin, 'HH:mm')} onChange={(m) => setBegin(withTime(begin, m))} onNudge={(d) => setBegin(new Date(begin.getTime() + d * 60_000))} />
         </Labeled>
         <Labeled label={nextDay ? 'Bis (Folgetag)' : 'Bis'}>
           {running ? (
-            <Input value="läuft" disabled className="text-center" />
+            <Input value="läuft" disabled className="h-10 text-center" />
           ) : (
-            <TimeField value={format(end, 'HH:mm')} onChange={setEndMinute} onNudge={(d) => setDuration(duration + d * MIN)} />
+            <TimeField label="Ende" value={format(end, 'HH:mm')} onChange={setEndMinute} onNudge={(d) => setDuration(duration + d * MIN)} />
           )}
         </Labeled>
         <Labeled label="Dauer">
           {running ? (
-            <Input value={`${formatDuration(duration)} h`} disabled className="text-center font-mono tabular-nums" />
+            <Input value={`${formatDuration(duration)} h`} disabled className="h-10 text-center font-mono tabular-nums" />
           ) : (
             <DurationField seconds={duration} onChange={setDuration} />
           )}
@@ -154,7 +156,7 @@ export function TimeRangeEditor({ value, onChange }: { value: TimeRangeValue; on
               Ende = jetzt
             </Chip>
           )}
-          {(minuteOfDay(begin) % STEP !== 0 || (duration / MIN) % STEP !== 0) && (
+          {!roundUp && (minuteOfDay(begin) % STEP !== 0 || (duration / MIN) % STEP !== 0) && (
             <Chip
               onClick={() => {
                 const b = withTime(begin, Math.round(minuteOfDay(begin) / STEP) * STEP);
@@ -167,6 +169,12 @@ export function TimeRangeEditor({ value, onChange }: { value: TimeRangeValue; on
             </Chip>
           )}
         </div>
+      )}
+      {!running && roundUp > 0 && roundUpSeconds(duration, roundUp) !== duration && (
+        <p className="text-xs text-muted">
+          Gespeichert wird <span className="font-medium text-fg">{formatDuration(roundUpSeconds(duration, roundUp))} h</span> – aufgerundet auf volle {roundUp} Minuten
+          (einstellbar unter Einstellungen → Zeiterfassung).
+        </p>
       )}
     </div>
   );
@@ -200,43 +208,196 @@ function Chip({ children, onClick, active, disabled, title }: { children: ReactN
   );
 }
 
-function NudgeButton({ delta, onClick }: { delta: number; onClick: () => void }) {
+/** Eingabe mit −/+ (je 15 min) links und rechts im selben Rahmen */
+function Stepper({ onMinus, onPlus, minusDisabled, invalid, children }: { onMinus: () => void; onPlus: () => void; minusDisabled?: boolean; invalid?: boolean; children: ReactNode }) {
+  const btn =
+    'flex w-8 shrink-0 items-center justify-center text-muted transition-colors hover:bg-hover hover:text-fg active:bg-primary-soft disabled:pointer-events-none disabled:opacity-40';
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      onClick={onClick}
-      className="h-9 shrink-0 gap-0.5 px-2 tabular-nums"
-      title={`${delta < 0 ? '−' : '+'}${Math.abs(delta)} Minuten`}
-      aria-label={`${delta < 0 ? 'minus' : 'plus'} ${Math.abs(delta)} Minuten`}
+    <div
+      className={cn(
+        'flex h-10 items-stretch overflow-hidden rounded-lg border bg-input transition-[border-color,box-shadow] focus-within:shadow-glow',
+        invalid ? 'border-danger' : 'border-input-border focus-within:border-primary hover:border-border-strong',
+      )}
     >
-      {delta < 0 ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-      {Math.abs(delta)}
-    </Button>
-  );
-}
-
-/** Uhrzeit mit −15/+15 daneben; onChange liefert Minuten seit Tagesbeginn */
-function TimeField({ value, onChange, onNudge }: { value: string; onChange: (minutes: number) => void; onNudge: (deltaMinutes: number) => void }) {
-  return (
-    <div className="flex items-center gap-1">
-      <NudgeButton delta={-STEP} onClick={() => onNudge(-STEP)} />
-      <Input
-        type="time"
-        value={value}
-        onChange={(e) => {
-          const m = e.target.value.match(/^(\d{1,2}):(\d{2})/);
-          if (m) onChange(Number(m[1]) * 60 + Number(m[2]));
-        }}
-        className="min-w-0 flex-1 px-1.5 text-center tabular-nums"
-        required
-      />
-      <NudgeButton delta={STEP} onClick={() => onNudge(STEP)} />
+      <button type="button" className={cn(btn, 'border-r border-border')} onClick={onMinus} disabled={minusDisabled} title={`${STEP} Minuten weniger`} aria-label={`${STEP} Minuten weniger`}>
+        <Minus className="h-3.5 w-3.5" />
+      </button>
+      {children}
+      <button type="button" className={cn(btn, 'border-l border-border')} onClick={onPlus} title={`${STEP} Minuten mehr`} aria-label={`${STEP} Minuten mehr`}>
+        <Plus className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
 
-/** Dauer frei eintippen (übernommen bei Enter/Verlassen) mit −15/+15 */
+const innerInput =
+  'min-w-0 flex-1 bg-transparent px-1 text-center font-mono text-[15px] font-medium tabular-nums text-fg focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:mx-auto';
+
+/** Raster der Uhrzeitauswahl (Minuten) */
+const PICK_STEP = 5;
+const HOURS = Array.from({ length: 24 }, (_, h) => h);
+const MINUTES = Array.from({ length: 60 / PICK_STEP }, (_, i) => i * PICK_STEP);
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** „9“, „930“, „0930“, „9:30“, „9.30“ → Minuten seit Tagesbeginn, auf 5 min gerundet; null = ungültig */
+function parseTime(input: string): number | null {
+  const s = input.trim().replace(/[.,h]/g, ':');
+  let h: number;
+  let m: number;
+  let r: RegExpMatchArray | null;
+  if ((r = s.match(/^(\d{1,2}):(\d{1,2})$/))) [h, m] = [Number(r[1]), Number(r[2])];
+  else if ((r = s.match(/^(\d{1,2})(\d{2})$/))) [h, m] = [Number(r[1]), Number(r[2])];
+  else if ((r = s.match(/^(\d{1,2})$/))) [h, m] = [Number(r[1]), 0];
+  else return null;
+  if (h > 23 || m > 59) return null;
+  return Math.min(DAY_MIN - PICK_STEP, Math.round((h * 60 + m) / PICK_STEP) * PICK_STEP);
+}
+
+/**
+ * Uhrzeit mit −/+ 15 min. Klick öffnet eine Auswahl mit Stunden und Minuten im 5-Minuten-Raster;
+ * Eintippen geht auch (wird auf 5 min gerundet). onChange liefert Minuten seit Tagesbeginn.
+ */
+function TimeField({ value, onChange, onNudge, label }: { value: string; onChange: (minutes: number) => void; onNudge: (deltaMinutes: number) => void; label: string }) {
+  const [text, setText] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<CSSProperties>({});
+  const inputRef = useRef<HTMLInputElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const hourListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => setText(value), [value]);
+
+  const [h, rawM] = value.split(':').map(Number) as [number, number];
+  /** Minute im 5-Minuten-Raster (für die Auswahl; z. B. importierte 12:03 → 05) */
+  const m = Math.min(55, Math.round(rawM / PICK_STEP) * PICK_STEP);
+  const current = h * 60 + rawM;
+
+  const commit = () => {
+    const v = parseTime(text);
+    if (v != null && v !== current) onChange(v);
+    else setText(value);
+  };
+  const close = () => {
+    setOpen(false);
+    commit();
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = inputRef.current?.parentElement?.getBoundingClientRect();
+      if (!r) return;
+      const width = 236;
+      const left = Math.min(Math.max(8, r.left + r.width / 2 - width / 2), window.innerWidth - width - 8);
+      const below = window.innerHeight - r.bottom;
+      setPos(below < 260 && r.top > below ? { left, width, bottom: window.innerHeight - r.top + 4 } : { left, width, top: r.bottom + 4 });
+    };
+    place();
+    hourListRef.current?.querySelector<HTMLElement>('[data-on="1"]')?.scrollIntoView({ block: 'center' });
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!popRef.current?.contains(t) && !inputRef.current?.parentElement?.contains(t)) close();
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, text]);
+
+  const cell = (on: boolean) =>
+    cn('h-7 shrink-0 rounded-md text-sm tabular-nums transition-colors', on ? 'bg-primary font-semibold text-primary-fg' : 'hover:bg-hover');
+
+  return (
+    <Stepper onMinus={() => onNudge(-STEP)} onPlus={() => onNudge(STEP)}>
+      <input
+        ref={inputRef}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={(e) => {
+          e.target.select();
+          setOpen(true);
+        }}
+        onClick={() => setOpen(true)}
+        onBlur={(e) => {
+          // Klick in die Auswahl: offen lassen
+          if (popRef.current?.contains(e.relatedTarget as Node)) return;
+          close();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            close();
+          } else if (e.key === 'Escape' && open) {
+            e.preventDefault();
+            e.stopPropagation(); // nicht gleich den Dialog schließen
+            setText(value);
+            setOpen(false);
+          } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            onNudge(e.key === 'ArrowUp' ? PICK_STEP : -PICK_STEP);
+          }
+        }}
+        className={innerInput}
+        aria-label={label}
+        inputMode="numeric"
+        autoComplete="off"
+        title="Uhrzeit, z. B. 9:30 oder 0930 – Pfeiltasten: ±5 min"
+      />
+      {open &&
+        createPortal(
+          <div
+            ref={popRef}
+            className="fixed z-[70] animate-scale-in rounded-xl border border-border bg-surface p-2 shadow-pop"
+            style={pos}
+            onMouseDown={(e) => e.preventDefault() /* Fokus im Feld lassen */}
+          >
+            <div className="grid grid-cols-[1fr_1fr] gap-2">
+              <div>
+                <div className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Stunde</div>
+                <div ref={hourListRef} className="grid max-h-52 grid-cols-3 gap-0.5 overflow-y-auto pr-0.5">
+                  {HOURS.map((hh) => (
+                    <button key={hh} type="button" data-on={hh === h ? '1' : undefined} className={cell(hh === h)} onClick={() => onChange(hh * 60 + m)}>
+                      {pad(hh)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Minute</div>
+                <div className="grid grid-cols-3 gap-0.5">
+                  {MINUTES.map((mm) => (
+                    <button
+                      key={mm}
+                      type="button"
+                      className={cell(mm === m)}
+                      onClick={() => {
+                        onChange(h * 60 + mm);
+                        setOpen(false);
+                        inputRef.current?.blur();
+                      }}
+                    >
+                      {pad(mm)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </Stepper>
+  );
+}
+
+/** Dauer frei eintippen (übernommen bei Enter/Verlassen) mit −/+ 15 min */
 function DurationField({ seconds, onChange }: { seconds: number; onChange: (sec: number) => void }) {
   const [text, setText] = useState(formatDuration(seconds));
   const [focused, setFocused] = useState(false);
@@ -249,9 +410,8 @@ function DurationField({ seconds, onChange }: { seconds: number; onChange: (sec:
     else setText(formatDuration(seconds));
   };
   return (
-    <div className="flex items-center gap-1">
-      <NudgeButton delta={-STEP} onClick={() => onChange(seconds - STEP * MIN)} />
-      <Input
+    <Stepper onMinus={() => onChange(seconds - STEP * MIN)} onPlus={() => onChange(seconds + STEP * MIN)} minusDisabled={seconds <= MIN} invalid={focused && !!text.trim() && parsed == null}>
+      <input
         value={text}
         onChange={(e) => setText(e.target.value)}
         onFocus={(e) => {
@@ -268,18 +428,18 @@ function DurationField({ seconds, onChange }: { seconds: number; onChange: (sec:
             commit();
           }
         }}
-        className={cn('min-w-0 flex-1 px-1.5 text-center font-mono tabular-nums', focused && text.trim() && parsed == null && 'border-danger focus:border-danger')}
+        className={innerInput}
         title="z. B. 1:30, 1,5 oder 90m"
         aria-label="Dauer"
         inputMode="decimal"
+        autoComplete="off"
       />
-      <NudgeButton delta={STEP} onClick={() => onChange(seconds + STEP * MIN)} />
-    </div>
+    </Stepper>
   );
 }
 
 /**
- * Tag als Leiste (0–24 Uhr) mit zwei Griffen (5-Minuten-Raster). Endet der Eintrag am Folgetag,
+ * Tag als Leiste (0–24 Uhr) mit zwei Griffen (15-Minuten-Schritte). Endet der Eintrag am Folgetag,
  * steht der rechte Griff am Tagesende und lässt sich nur zurückziehen.
  */
 function Timeline({ begin, end, running, onBegin, onEnd }: { begin: Date; end: Date; running: boolean; onBegin: (d: Date) => void; onEnd: (minutes: number) => void }) {
@@ -306,8 +466,8 @@ function Timeline({ begin, end, running, onBegin, onEnd }: { begin: Date; end: D
         <input
           type="range"
           min={0}
-          max={DAY_MIN - 5}
-          step={5}
+          max={DAY_MIN - STEP}
+          step={STEP}
           value={b}
           onChange={(ev) => {
             const m = Number(ev.target.value);
@@ -320,9 +480,9 @@ function Timeline({ begin, end, running, onBegin, onEnd }: { begin: Date; end: D
         {!running && (
           <input
             type="range"
-            min={5}
+            min={STEP}
             max={DAY_MIN}
-            step={5}
+            step={STEP}
             value={e}
             onChange={(ev) => {
               const m = Number(ev.target.value);

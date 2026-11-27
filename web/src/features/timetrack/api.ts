@@ -11,6 +11,8 @@ import type {
   TtMasterData,
   TtRecent,
   TtReport,
+  TtEntryMetaInput,
+  TtSettings,
   TtStartInput,
 } from '@kuvert/shared';
 import { api, apiUrl, errorMessage } from '@/lib/api';
@@ -24,6 +26,7 @@ export const ttk = {
   tags: ['timetrack', 'tags'] as const,
   report: (from: string, to: string) => ['timetrack', 'report', from, to] as const,
   kimai: ['timetrack', 'kimai'] as const,
+  settings: ['timetrack', 'settings'] as const,
 };
 
 export const TZ = (() => {
@@ -47,13 +50,18 @@ export function useMasterData() {
   return useQuery({ queryKey: ttk.master, queryFn: () => api<TtMasterData>('/timetrack/masterdata'), staleTime: 5 * 60_000 });
 }
 
-export function useActiveEntry() {
+/** Alle laufenden Timer (ältester zuerst) */
+export function useActiveEntries() {
   return useQuery({
     queryKey: ttk.active,
-    queryFn: async () => (await api<{ entry: TtEntry | null }>('/timetrack/active')).entry,
+    queryFn: async () => (await api<{ entries: TtEntry[] }>('/timetrack/active')).entries,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
+}
+
+export function useTtSettings() {
+  return useQuery({ queryKey: ttk.settings, queryFn: () => api<TtSettings>('/timetrack/settings'), staleTime: 10 * 60_000 });
 }
 
 export function useEntries(f: EntryFilter, enabled = true) {
@@ -110,30 +118,31 @@ export function useEntryActions() {
   const qc = useQueryClient();
   const refresh = useInvalidateEntries();
   const onError = (err: unknown) => toast.error(errorMessage(err));
+  const addRunning = (e: TtEntry) => {
+    qc.setQueryData<TtEntry[]>(ttk.active, (old) => [...(old ?? []).filter((x) => x.id !== e.id), e]);
+    refresh();
+  };
 
   const start = useMutation({
     mutationFn: (b: TtStartInput) => api<TtEntry>('/timetrack/start', { method: 'POST', body: b }),
-    onSuccess: (e) => {
-      qc.setQueryData(ttk.active, e);
-      refresh();
-    },
+    onSuccess: addRunning,
     onError,
   });
+  /** id = diesen Timer stoppen, ohne id = alle */
   const stop = useMutation({
-    mutationFn: () => api<{ entry: TtEntry | null }>('/timetrack/stop', { method: 'POST' }),
+    mutationFn: (id?: string) => api<{ entries: TtEntry[] }>('/timetrack/stop', { method: 'POST', body: id ? { id } : {} }),
     onSuccess: (r) => {
-      qc.setQueryData(ttk.active, null);
+      const ids = new Set(r.entries.map((e) => e.id));
+      qc.setQueryData<TtEntry[]>(ttk.active, (old) => (old ?? []).filter((e) => !ids.has(e.id)));
       refresh();
-      if (r.entry) toast.success(`Gestoppt: ${formatDuration(r.entry.duration)} auf ${r.entry.projectName}`);
+      if (r.entries.length === 1) toast.success(`Gestoppt: ${formatDuration(r.entries[0]!.duration)} h auf ${r.entries[0]!.projectName}`);
+      else if (r.entries.length > 1) toast.success(`${r.entries.length} Timer gestoppt`);
     },
     onError,
   });
   const restart = useMutation({
     mutationFn: (id: string) => api<TtEntry>(`/timetrack/entries/${id}/restart`, { method: 'POST' }),
-    onSuccess: (e) => {
-      qc.setQueryData(ttk.active, e);
-      refresh();
-    },
+    onSuccess: addRunning,
     onError,
   });
   const save = useMutation({
@@ -150,7 +159,25 @@ export function useEntryActions() {
     },
     onError,
   });
-  return { start, stop, restart, save, remove };
+  /** Schlagworte/Verknüpfungen ändern – sofort in der Liste sichtbar, Server bestätigt nachträglich */
+  const meta = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: TtEntryMetaInput }) => api<TtEntry>(`/timetrack/entries/${id}/meta`, { method: 'PATCH', body }),
+    onMutate: ({ id, body }) => {
+      const patch = (e: TtEntry): TtEntry => (e.id === id ? { ...e, tags: body.tags ?? e.tags, links: body.links ?? e.links } : e);
+      qc.setQueriesData<TtEntryList>({ queryKey: ['timetrack', 'entries'] }, (old) => (old ? { ...old, items: old.items.map(patch) } : old));
+      qc.setQueryData<TtEntry[]>(ttk.active, (old) => old?.map(patch));
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['timetrack', 'entries'] });
+      void qc.invalidateQueries({ queryKey: ttk.tags });
+      void qc.invalidateQueries({ queryKey: ['timetrack', 'report'] });
+    },
+    onError: (err) => {
+      onError(err);
+      refresh();
+    },
+  });
+  return { start, stop, restart, save, remove, meta };
 }
 
 /* ───────────────────────────── Zeit & Formatierung ───────────────────────────── */
@@ -190,6 +217,19 @@ export function useNow(active: boolean): number {
     return () => clearInterval(t);
   }, [active]);
   return now;
+}
+
+/** Wie der Server beim Stoppen rundet: ganze Minuten, dann auf volle Blöcke aufrunden (mind. ein Block) */
+export function roundUpSeconds(sec: number, minutes: number): number {
+  if (!minutes) return sec;
+  const block = minutes * 60;
+  return Math.max(block, Math.ceil((Math.floor(sec / 60) * 60) / block) * block);
+}
+
+/** Summe der Dauern, laufende Einträge sekündlich bis jetzt */
+export function useLiveTotal(list: TtEntry[]): number {
+  const now = useNow(list.some((e) => !e.end));
+  return list.reduce((s, e) => s + (e.end ? e.duration : Math.max(0, Math.floor((now - Date.parse(e.begin)) / 1000))), 0);
 }
 
 /** Laufzeit eines (ggf. laufenden) Eintrags in Sekunden */

@@ -185,25 +185,29 @@ function Sidebar({ main, system, collapsed, onToggle }: { main: NavItem[]; syste
 
 function RailLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   return (
-    <NavLink
-      to={`/${item.path}`}
-      title={collapsed ? item.label : undefined}
-      className={({ isActive }) =>
-        cn(
-          'group relative flex h-9 items-center gap-3 rounded-lg text-sm font-medium transition-all duration-150',
-          collapsed ? 'justify-center' : 'px-2.5',
-          isActive ? 'bg-primary-soft text-primary' : 'text-muted hover:bg-hover hover:text-fg',
-        )
-      }
-    >
-      {({ isActive }) => (
-        <>
-          <item.icon className={cn('h-[18px] w-[18px] shrink-0 transition-transform group-hover:scale-105', isActive ? 'text-primary' : '')} />
-          {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
-          {item.useBadge && <NavBadge useCount={item.useBadge} variant={collapsed ? 'dot' : 'pill'} />}
-        </>
-      )}
-    </NavLink>
+    <>
+      <NavLink
+        to={`/${item.path}`}
+        title={collapsed ? item.label : undefined}
+        className={({ isActive }) =>
+          cn(
+            'group relative flex h-9 items-center gap-3 rounded-lg text-sm font-medium transition-all duration-150',
+            collapsed ? 'justify-center' : 'px-2.5',
+            isActive ? 'bg-primary-soft text-primary' : 'text-muted hover:bg-hover hover:text-fg',
+          )
+        }
+      >
+        {({ isActive }) => (
+          <>
+            <item.icon className={cn('h-[18px] w-[18px] shrink-0 transition-transform group-hover:scale-105', isActive ? 'text-primary' : '')} />
+            {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+            {item.useBadge && <NavBadge useCount={item.useBadge} variant={collapsed ? 'dot' : 'pill'} />}
+            {item.Status && collapsed && <item.Status variant="dot" />}
+          </>
+        )}
+      </NavLink>
+      {item.Status && !collapsed && <item.Status variant="rail" />}
+    </>
   );
 }
 
@@ -281,6 +285,7 @@ function MobileNav({ main, system }: { main: NavItem[]; system: NavItem[] }) {
             <span className="relative">
               <n.icon className="h-5 w-5" />
               {n.useBadge && <NavBadge useCount={n.useBadge} variant="icon" />}
+              {n.Status && <n.Status variant="icon" />}
             </span>
             {n.label}
           </NavLink>
@@ -310,6 +315,7 @@ function MobileNav({ main, system }: { main: NavItem[]; system: NavItem[] }) {
                   <span className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-surface-2">
                     <n.icon className="h-5 w-5 text-muted" />
                     {n.useBadge && <NavBadge useCount={n.useBadge} variant="icon" />}
+                    {n.Status && <n.Status variant="icon" />}
                   </span>
                   {n.label}
                 </NavLink>

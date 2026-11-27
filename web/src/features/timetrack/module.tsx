@@ -8,6 +8,7 @@ import { Timer } from 'lucide-react';
 import type { WebModule } from '@/modules/types';
 import { Skeleton } from '@/components/ui';
 import { useServerEvent } from '@/lib/events';
+import { TimerNavStatus, TimerPanelStatus } from './status';
 
 const PageLazy = lazy(() => import('./TimePage').then((m) => ({ default: m.TimePage })));
 const PanelLazy = lazy(() => import('./TimePanel').then((m) => ({ default: m.TimePanel })));
@@ -45,7 +46,7 @@ function TimetrackSync() {
 const mod: WebModule = {
   id: 'timetrack',
   feature: 'timetrack',
-  nav: [{ path: 'time', label: 'Zeiterfassung', icon: Timer, order: 42 }],
+  nav: [{ path: 'time', label: 'Zeiterfassung', icon: Timer, order: 42, Status: TimerNavStatus }],
   routes: [{ path: 'time/*', element: <TimeRoute /> }],
   sidePanels: [
     {
@@ -55,6 +56,7 @@ const mod: WebModule = {
       icon: Timer,
       order: 45,
       component: PanelLazy,
+      Status: TimerPanelStatus,
       keywords: 'zeiterfassung timer stoppuhr kimai stunden arbeitszeit projekt',
     },
   ],

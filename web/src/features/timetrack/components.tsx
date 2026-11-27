@@ -7,71 +7,89 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { MoreHorizontal, Pencil, Play, Plus, Square, Tag, Trash2 } from 'lucide-react';
 import type { TtEntry, TtEntryInput } from '@kuvert/shared';
-import { Badge, Button, Checkbox, ColorDot, Dropdown, EmptyState, Field, IconButton, Input, Modal, Select, Textarea, useConfirm } from '@/components/ui';
+import { Badge, Button, Checkbox, ColorDot, Dropdown, EmptyState, Field, IconButton, Input, Modal, Textarea, useConfirm } from '@/components/ui';
+import { Combobox, type ComboItem } from './Combobox';
 import { cn } from '@/lib/utils';
 import { TimeRangeEditor, type TimeRangeValue } from './TimeRangeEditor';
-import { formatClock, formatDuration, useElapsed, useEntryActions, useMasterLookup, useRecent, useTags, useActiveEntry } from './api';
+import { CopyTextButton, DoneToggle, EntryChips, TagMenu, useEntryMeta } from './EntryTags';
+import { useExtensions } from '@/modules/context';
+import { formatClock, formatDuration, formatMoney, roundUpSeconds, useActiveEntries, useElapsed, useEntryActions, useLiveTotal, useMasterLookup, useRecent, useTags, useTtSettings } from './api';
 
 /* ═════════════════════════════ Auswahl ═════════════════════════════ */
 
-/** Projekte nach Kunden gruppiert; ausgeblendete nur, wenn gerade gewählt */
-export function ProjectSelect({ value, onChange, className, placeholder = 'Projekt wählen …' }: { value: string; onChange: (id: string) => void; className?: string; placeholder?: string }) {
+/**
+ * Projektauswahl mit Suche: findet Projekte auch über den Kundennamen sowie Kunden-, Projekt- und
+ * Auftragsnummer. Ausgeblendete nur, wenn gerade gewählt. emptyOption = Leer-Eintrag (z. B. „Alle Projekte“).
+ */
+export function ProjectSelect({
+  value,
+  onChange,
+  className,
+  placeholder = 'Projekt oder Kunde suchen …',
+  emptyOption,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  className?: string;
+  placeholder?: string;
+  emptyOption?: string;
+}) {
   const { data } = useMasterLookup();
-  const groups = useMemo(() => {
+  const items = useMemo<ComboItem[]>(() => {
     if (!data) return [];
-    return data.customers
-      .map((c) => ({
-        customer: c,
-        projects: data.projects.filter((p) => p.customerId === c.id && ((p.visible && c.visible) || p.id === value)),
-      }))
-      .filter((g) => g.projects.length);
-  }, [data, value]);
+    const list: ComboItem[] = emptyOption ? [{ id: '', label: emptyOption }] : [];
+    for (const c of data.customers) {
+      for (const p of data.projects) {
+        if (p.customerId !== c.id || !((p.visible && c.visible) || p.id === value)) continue;
+        list.push({
+          id: p.id,
+          label: p.name,
+          group: c.name,
+          search: [c.number, p.number, p.orderNumber].filter(Boolean).join(' '),
+          color: p.color ?? c.color,
+          hint: p.visible && c.visible ? undefined : 'ausgeblendet',
+        });
+      }
+    }
+    return list;
+  }, [data, value, emptyOption]);
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} className={className} aria-label="Projekt">
-      <option value="">{placeholder}</option>
-      {groups.map((g) => (
-        <optgroup key={g.customer.id} label={g.customer.name}>
-          {g.projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-              {p.visible ? '' : ' (ausgeblendet)'}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </Select>
+    <Combobox
+      items={items}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      ariaLabel="Projekt"
+      className={className}
+      searchPlaceholder="Kunde, Projekt oder Nummer …"
+    />
   );
 }
 
-/** Globale und projektgebundene Tätigkeiten des gewählten Projekts */
+/** Tätigkeiten des gewählten Projekts und allgemeine, mit Suche */
 export function ActivitySelect({ projectId, value, onChange, className }: { projectId: string; value: string; onChange: (id: string) => void; className?: string }) {
-  const { data } = useMasterLookup();
-  const list = useMemo(() => {
+  const { data, projects } = useMasterLookup();
+  const items = useMemo<ComboItem[]>(() => {
     const all = (data?.activities ?? []).filter((a) => (a.projectId === null || a.projectId === projectId) && (a.visible || a.id === value));
-    return { own: all.filter((a) => a.projectId), global: all.filter((a) => !a.projectId) };
-  }, [data, projectId, value]);
+    const projectName = projects.get(projectId)?.name ?? 'Projekt';
+    return [
+      { id: '', label: 'Keine Tätigkeit' },
+      ...all.filter((a) => a.projectId).map((a) => ({ id: a.id, label: a.name, group: `Nur ${projectName}`, color: a.color })),
+      ...all.filter((a) => !a.projectId).map((a) => ({ id: a.id, label: a.name, group: 'Allgemein', color: a.color })),
+    ];
+  }, [data, projects, projectId, value]);
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} className={className} aria-label="Tätigkeit" disabled={!projectId}>
-      <option value="">Keine Tätigkeit</option>
-      {list.own.length > 0 && (
-        <optgroup label="Projekt">
-          {list.own.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </optgroup>
-      )}
-      {list.global.length > 0 && (
-        <optgroup label="Allgemein">
-          {list.global.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </optgroup>
-      )}
-    </Select>
+    <Combobox
+      items={items}
+      value={value}
+      onChange={onChange}
+      placeholder="Keine Tätigkeit"
+      ariaLabel="Tätigkeit"
+      className={className}
+      disabled={!projectId}
+      display={(i) => i.label}
+      searchPlaceholder="Tätigkeit suchen …"
+    />
   );
 }
 
@@ -108,24 +126,51 @@ export function EntryTitle({ e, className }: { e: Pick<TtEntry, 'customerName' |
 
 /* ═════════════════════════════ Timer ═════════════════════════════ */
 
-/** Laufender Timer oder Startformular; compact für die Seitenleiste */
+/** Laufende Timer (mehrere möglich) und Startformular; compact für die Seitenleiste */
 export function TimerCard({ compact }: { compact?: boolean }) {
-  const { data: active, isLoading } = useActiveEntry();
+  const { data: active, isLoading } = useActiveEntries();
+  const { stop } = useEntryActions();
   const [editing, setEditing] = useState<TtEntry | null>(null);
+  const [another, setAnother] = useState(false);
+  const running = active ?? [];
+  // Nach dem Start des weiteren Timers das Formular wieder einklappen
+  const count = running.length;
+  useEffect(() => setAnother(false), [count]);
+
   if (isLoading) return <div className="h-32 animate-pulse rounded-2xl bg-surface-2" />;
   return (
-    <>
-      {active ? <RunningTimer entry={active} compact={compact} onEdit={() => setEditing(active)} /> : <StartForm compact={compact} />}
+    <div className="space-y-3">
+      {running.length > 1 && (
+        <div className="flex items-center justify-between gap-2 px-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-primary">{running.length} Timer laufen</span>
+          <Button size="sm" variant="ghost" className="text-danger" icon={<Square className="h-3.5 w-3.5 fill-current" />} loading={stop.isPending && !stop.variables} onClick={() => stop.mutate(undefined)}>
+            Alle stoppen
+          </Button>
+        </div>
+      )}
+      {running.map((e) => (
+        <RunningTimer key={e.id} entry={e} compact={compact || running.length > 1} onEdit={() => setEditing(e)} />
+      ))}
+      {running.length === 0 || another ? (
+        <StartForm compact={compact} onCancel={running.length ? () => setAnother(false) : undefined} />
+      ) : (
+        <Button variant="outline" icon={<Plus className="h-4 w-4" />} className="w-full justify-center border-dashed" onClick={() => setAnother(true)}>
+          Weiteren Timer starten
+        </Button>
+      )}
       {editing && <EntryEditor entry={editing} onClose={() => setEditing(null)} />}
-    </>
+    </div>
   );
 }
 
 function RunningTimer({ entry, compact, onEdit }: { entry: TtEntry; compact?: boolean; onEdit: () => void }) {
   const elapsed = useElapsed(entry);
   const { stop } = useEntryActions();
+  const { data: settings } = useTtSettings();
+  const roundUp = settings?.roundUp ?? 15;
+  const rounded = roundUpSeconds(elapsed, roundUp);
   return (
-    <section className="rounded-2xl border border-primary/30 bg-primary-soft/40 p-4 shadow-card">
+    <section className={cn('rounded-2xl border border-primary/30 bg-primary-soft/40 shadow-card', compact ? 'p-3' : 'p-4')}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-2 text-xs font-medium text-primary">
@@ -136,16 +181,27 @@ function RunningTimer({ entry, compact, onEdit }: { entry: TtEntry; compact?: bo
             Läuft seit {format(new Date(entry.begin), 'HH:mm')} Uhr
           </div>
           <EntryTitle e={entry} />
-          {entry.description && <p className="mt-1 line-clamp-2 text-sm text-fg/80">{entry.description}</p>}
-          {entry.tags.length > 0 && <TagList tags={entry.tags} className="mt-1.5" />}
+          {entry.description && <p className="mt-1 line-clamp-2 whitespace-pre-line text-sm text-fg/80">{entry.description}</p>}
+          <EntryChips entry={entry} className="mt-1.5" />
         </div>
-        <IconButton label="Bearbeiten" size="icon-sm" onClick={onEdit}>
-          <Pencil className="h-4 w-4" />
-        </IconButton>
+        <div className="flex shrink-0 items-center">
+          <CopyTextButton text={entry.description} compact />
+          <IconButton label="Bearbeiten" size="icon-sm" onClick={onEdit}>
+            <Pencil className="h-4 w-4" />
+          </IconButton>
+        </div>
       </div>
-      <div className={cn('mt-3 flex items-center gap-3', compact ? 'justify-between' : 'justify-between sm:justify-end')}>
-        <span className={cn('font-mono font-semibold tabular-nums tracking-tight', compact ? 'text-2xl' : 'text-3xl')}>{formatClock(elapsed)}</span>
-        <Button variant="danger" icon={<Square className="h-4 w-4 fill-current" />} loading={stop.isPending} onClick={() => stop.mutate()}>
+      <div className="mt-3 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <div className={cn('font-mono font-semibold tabular-nums tracking-tight', compact ? 'text-2xl' : 'text-3xl')}>{formatClock(elapsed)}</div>
+          {roundUp > 0 && <div className="text-[11px] text-muted">Beim Stoppen: {formatDuration(rounded)} h (auf {roundUp} min aufgerundet)</div>}
+        </div>
+        <Button
+          variant="danger"
+          icon={<Square className="h-4 w-4 fill-current" />}
+          loading={stop.isPending && stop.variables === entry.id}
+          onClick={() => stop.mutate(entry.id)}
+        >
           Stopp
         </Button>
       </div>
@@ -153,7 +209,7 @@ function RunningTimer({ entry, compact, onEdit }: { entry: TtEntry; compact?: bo
   );
 }
 
-function StartForm({ compact }: { compact?: boolean }) {
+function StartForm({ compact, onCancel }: { compact?: boolean; onCancel?: () => void }) {
   const { data: recent } = useRecent();
   const { start } = useEntryActions();
   const [projectId, setProjectId] = useState('');
@@ -197,29 +253,64 @@ function StartForm({ compact }: { compact?: boolean }) {
         submit();
       }}
     >
-      <div className={cn('grid gap-2', !compact && 'sm:grid-cols-2')}>
-        <ProjectSelect
-          value={projectId}
-          onChange={(v) => {
-            setTouched(true);
-            setProjectId(v);
-          }}
-        />
-        <ActivitySelect
-          projectId={projectId}
-          value={activityId}
-          onChange={(v) => {
-            setTouched(true);
-            setActivityId(v);
-          }}
-        />
+      <div className={cn('grid gap-3', !compact && 'sm:grid-cols-2')}>
+        <Field label="Projekt (Kunde › Projekt)">
+          <ProjectSelect
+            value={projectId}
+            onChange={(v) => {
+              setTouched(true);
+              setProjectId(v);
+            }}
+          />
+        </Field>
+        <Field label="Tätigkeit">
+          <ActivitySelect
+            projectId={projectId}
+            value={activityId}
+            onChange={(v) => {
+              setTouched(true);
+              setActivityId(v);
+            }}
+          />
+        </Field>
       </div>
-      <div className={cn('mt-2 flex gap-2', compact && 'flex-col')}>
-        <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Woran arbeitest du?" className="min-w-0 flex-1" />
-        {!compact && <TagsInput value={tags} onChange={setTags} className="sm:w-56" />}
-        <Button type="submit" variant="primary" icon={<Play className="h-4 w-4 fill-current" />} loading={start.isPending} disabled={!projectId} className={cn(compact && 'justify-center')}>
+      <Field label="Was machst du?" hint={compact ? undefined : 'Enter startet den Timer, Umschalt+Enter macht eine neue Zeile.'} className="mt-3">
+        <Textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter startet, Umschalt+Enter macht eine neue Zeile
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder="Woran arbeitest du?"
+          rows={compact ? 3 : 2}
+          className="min-h-0 resize-y"
+        />
+      </Field>
+      <div className={cn('mt-3 flex gap-2', compact ? 'flex-col' : 'flex-wrap items-end')}>
+        {!compact && (
+          <Field label="Schlagworte" className="min-w-[12rem] flex-1">
+            <TagsInput value={tags} onChange={setTags} />
+          </Field>
+        )}
+        <Button
+          type="submit"
+          variant="primary"
+          icon={<Play className="h-4 w-4 fill-current" />}
+          loading={start.isPending}
+          disabled={!projectId}
+          className={cn(compact ? 'h-10 justify-center' : 'px-6')}
+        >
           Start
         </Button>
+        {onCancel && (
+          <Button variant="ghost" onClick={onCancel} className={cn(compact && 'justify-center')}>
+            Abbrechen
+          </Button>
+        )}
       </div>
     </form>
   );
@@ -230,13 +321,13 @@ function StartForm({ compact }: { compact?: boolean }) {
 export function RecentList({ limit = 5 }: { limit?: number }) {
   const { data: recent } = useRecent();
   const { start } = useEntryActions();
-  const { data: active } = useActiveEntry();
+  const { data: active } = useActiveEntries();
   const items = (recent ?? []).slice(0, limit);
   if (!items.length) return null;
   return (
     <div className="space-y-1">
       {items.map((r, i) => {
-        const same = active && active.projectId === r.projectId && active.activityId === r.activityId && (active.description ?? '') === (r.description ?? '');
+        const same = (active ?? []).some((a) => a.projectId === r.projectId && a.activityId === r.activityId && (a.description ?? '') === (r.description ?? ''));
         return (
           <div key={i} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-hover">
             <div className="min-w-0 flex-1">
@@ -274,6 +365,14 @@ export function TagList({ tags, className }: { tags: string[]; className?: strin
 }
 
 const dayKey = (iso: string) => format(new Date(iso), 'yyyy-MM-dd');
+
+/** „95“, „95,50“, „1.234,5“ → Zahl; leer → null; ungültig → undefined */
+function parseMoney(s: string): number | null | undefined {
+  const t = s.trim().replace(/\s|€/g, '');
+  if (!t) return null;
+  const n = Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t);
+  return Number.isFinite(n) && n >= 0 && n <= 1_000_000 ? Math.round(n * 100) / 100 : undefined;
+}
 
 export function dayLabel(key: string): string {
   const d = new Date(`${key}T12:00:00`);
@@ -323,9 +422,7 @@ export function EntryDays({ entries, compact, empty }: { entries: TtEntry[]; com
 }
 
 function DaySection({ day, list, compact, children }: { day: string; list: TtEntry[]; compact?: boolean; children: ReactNode }) {
-  const running = list.find((e) => !e.end);
-  const elapsed = useElapsed(running);
-  const total = list.reduce((s, e) => s + (e.end ? e.duration : 0), 0) + (running ? elapsed : 0);
+  const total = useLiveTotal(list);
   return (
     <section className={cn(!compact && 'overflow-hidden rounded-2xl border border-border bg-surface shadow-card')}>
       <header className={cn('flex items-center justify-between gap-2', compact ? 'px-1 pb-1' : 'border-b border-border bg-surface-2/50 px-4 py-2')}>
@@ -340,17 +437,19 @@ function DaySection({ day, list, compact, children }: { day: string; list: TtEnt
 function EntryRow({ e, compact, onEdit, onRestart, onDelete }: { e: TtEntry; compact?: boolean; onEdit: () => void; onRestart: () => void; onDelete: () => void }) {
   const elapsed = useElapsed(e);
   const running = !e.end;
+  const extensions = useExtensions('timeEntryActions');
+  const { addLink, doneTag } = useEntryMeta(e);
   return (
-    <div className={cn('group flex items-center gap-3', compact ? 'rounded-lg px-1 py-1.5 hover:bg-hover' : 'px-4 py-2.5 hover:bg-hover/60')}>
-      <button type="button" className="min-w-0 flex-1 text-left" onClick={onEdit}>
-        <EntryTitle e={e} />
-        {(e.description || (!compact && e.tags.length > 0)) && (
-          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-2 pl-[18px]">
-            {e.description && <span className={cn('min-w-0 text-xs text-muted', compact ? 'truncate' : 'line-clamp-2')}>{e.description}</span>}
-            {!compact && e.tags.length > 0 && <TagList tags={e.tags} />}
-          </div>
-        )}
-      </button>
+    <div className={cn('group flex items-center gap-2', compact ? 'rounded-lg px-1 py-1.5 hover:bg-hover' : 'gap-3 px-4 py-2.5 hover:bg-hover/60')}>
+      <div className="min-w-0 flex-1">
+        <button type="button" className="block w-full min-w-0 text-left" onClick={onEdit}>
+          <EntryTitle e={e} />
+          {e.description && (
+            <span className={cn('mt-0.5 block min-w-0 whitespace-pre-line pl-[18px] text-xs text-muted', compact ? 'truncate' : 'line-clamp-2')}>{e.description}</span>
+          )}
+        </button>
+        <EntryChips entry={e} className="mt-1 pl-[18px]" />
+      </div>
       {!compact && (
         <span className="hidden shrink-0 text-xs tabular-nums text-muted sm:block">
           {format(new Date(e.begin), 'HH:mm')} – {e.end ? format(new Date(e.end), 'HH:mm') : 'läuft'}
@@ -361,26 +460,34 @@ function EntryRow({ e, compact, onEdit, onRestart, onDelete }: { e: TtEntry; com
           nicht abrechenbar
         </Badge>
       )}
-      <span className={cn('w-14 shrink-0 text-right font-mono text-sm tabular-nums', running && 'font-semibold text-primary')}>{formatDuration(running ? elapsed : e.duration)}</span>
-      {!running && (
-        <IconButton label="Erneut starten" size="icon-sm" onClick={onRestart} className={cn(!compact && 'opacity-60 group-hover:opacity-100')}>
-          <Play className="h-4 w-4" />
-        </IconButton>
-      )}
-      <Dropdown
-        align="right"
-        trigger={
-          <IconButton label="Mehr" size="icon-sm">
-            <MoreHorizontal className="h-4 w-4" />
+      <span className={cn('w-12 shrink-0 text-right font-mono text-sm tabular-nums', running && 'font-semibold text-primary')}>{formatDuration(running ? elapsed : e.duration)}</span>
+      <div className="flex shrink-0 items-center">
+        <CopyTextButton text={e.description} compact={compact} />
+        <DoneToggle entry={e} compact={compact} />
+        <TagMenu entry={e} />
+        {extensions.map((Ext, i) => (
+          <Ext key={i} entry={e} addLink={addLink} doneTag={doneTag} compact={compact} />
+        ))}
+        {!running && !compact && (
+          <IconButton label="Erneut starten" size="icon-sm" onClick={onRestart} className="opacity-60 group-hover:opacity-100">
+            <Play className="h-4 w-4" />
           </IconButton>
-        }
-        items={[
-          { label: 'Bearbeiten', icon: <Pencil />, onClick: onEdit },
-          ...(!running ? [{ label: 'Erneut starten', icon: <Play />, onClick: onRestart }] : []),
-          { divider: true, label: '' },
-          { label: 'Löschen', icon: <Trash2 />, danger: true, onClick: onDelete },
-        ]}
-      />
+        )}
+        <Dropdown
+          align="right"
+          trigger={
+            <IconButton label="Mehr" size="icon-sm">
+              <MoreHorizontal className="h-4 w-4" />
+            </IconButton>
+          }
+          items={[
+            { label: 'Bearbeiten', icon: <Pencil />, onClick: onEdit },
+            ...(!running ? [{ label: 'Erneut starten', icon: <Play />, onClick: onRestart }] : []),
+            { divider: true, label: '' },
+            { label: 'Löschen', icon: <Trash2 />, danger: true, onClick: onDelete },
+          ]}
+        />
+      </div>
     </div>
   );
 }
@@ -390,7 +497,7 @@ function EntryRow({ e, compact, onEdit, onRestart, onDelete }: { e: TtEntry; com
 /** entry = null → neuer Eintrag (optional mit Vorgabe-Tag) */
 export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | null; defaultDate?: Date; onClose: () => void }) {
   const { save } = useEntryActions();
-  const { projects, activities } = useMasterLookup();
+  const { projects, activities, customers } = useMasterLookup();
   const { data: recent } = useRecent();
   const running = !!entry && !entry.end;
 
@@ -409,6 +516,8 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
   const [tags, setTags] = useState((entry?.tags ?? []).join(', '));
   const [billable, setBillable] = useState(entry?.billable ?? true);
   const [billableTouched, setBillableTouched] = useState(!!entry);
+  const [rateText, setRateText] = useState(entry?.hourlyRateManual && entry.hourlyRate != null ? String(entry.hourlyRate).replace('.', ',') : '');
+  const [fixedText, setFixedText] = useState(entry?.fixedRate != null ? String(entry.fixedRate).replace('.', ',') : '');
 
   useEffect(() => {
     const a = activityId ? activities.get(activityId) : null;
@@ -425,7 +534,14 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
 
   const begin = range.begin;
   const end = range.duration == null ? null : new Date(begin.getTime() + range.duration * 1000);
-  const valid = !!projectId && !Number.isNaN(begin.getTime()) && (running || (range.duration ?? 0) >= 60);
+  const hourlyRate = parseMoney(rateText);
+  const fixedRate = parseMoney(fixedText);
+  // Automatischer Stundensatz: Tätigkeit → Projekt → Kunde
+  const project = projects.get(projectId);
+  const customer = project ? customers.get(project.customerId) : undefined;
+  const autoRate = (activityId ? activities.get(activityId)?.hourlyRate : null) ?? project?.hourlyRate ?? customer?.hourlyRate ?? null;
+  const currency = customer?.currency ?? 'EUR';
+  const valid = !!projectId && !Number.isNaN(begin.getTime()) && (running || (range.duration ?? 0) >= 60) && hourlyRate !== undefined && fixedRate !== undefined;
 
   const submit = () => {
     if (!valid) return;
@@ -437,7 +553,8 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
       description: description.trim() || null,
       tags: parseTags(tags),
       billable,
-      fixedRate: entry?.fixedRate ?? null,
+      fixedRate: fixedRate ?? null,
+      hourlyRate: hourlyRate ?? null,
     };
     save.mutate({ id: entry?.id ?? null, body }, { onSuccess: onClose });
   };
@@ -479,14 +596,31 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
         <Field label="Schlagworte">
           <TagsInput value={tags} onChange={setTags} />
         </Field>
-        <Checkbox
-          checked={billable}
-          onChange={(v) => {
-            setBillableTouched(true);
-            setBillable(v);
-          }}
-          label="Abrechenbar"
-        />
+        <div className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <Field
+            label={`Stundensatz (${currency})`}
+            hint={rateText.trim() ? 'Eigener Satz für diesen Eintrag – leeren für automatisch.' : autoRate != null ? `Automatisch: ${formatMoney(autoRate, currency)} (Tätigkeit → Projekt → Kunde)` : 'Kein Stundensatz hinterlegt'}
+            error={hourlyRate === undefined ? 'Bitte eine Zahl angeben' : undefined}
+          >
+            <Input value={rateText} onChange={(e) => setRateText(e.target.value)} inputMode="decimal" placeholder={autoRate != null ? String(autoRate).replace('.', ',') : 'z. B. 95'} />
+          </Field>
+          <Field
+            label={`Festbetrag (${currency})`}
+            hint="Ersetzt Stundensatz × Dauer"
+            error={fixedRate === undefined ? 'Bitte eine Zahl angeben' : undefined}
+          >
+            <Input value={fixedText} onChange={(e) => setFixedText(e.target.value)} inputMode="decimal" placeholder="optional" />
+          </Field>
+          <Checkbox
+            checked={billable}
+            onChange={(v) => {
+              setBillableTouched(true);
+              setBillable(v);
+            }}
+            label="Abrechenbar"
+            className="pb-2"
+          />
+        </div>
         {entry?.imported && <p className="text-xs text-muted">Aus Kimai übernommen – ein erneuter Import überschreibt Änderungen an diesem Eintrag.</p>}
         <button type="submit" hidden />
       </form>

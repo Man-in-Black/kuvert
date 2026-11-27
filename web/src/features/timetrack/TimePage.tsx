@@ -8,10 +8,10 @@ import { useSearchParams } from 'react-router-dom';
 import { addMonths, addWeeks, addYears, endOfWeek, format, isSameMonth, startOfMonth, startOfWeek, startOfYear } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Clock, Download, Plus, Search, Timer, Upload, Wallet } from 'lucide-react';
-import { Button, Card, ColorDot, EmptyState, IconButton, Input, Modal, PageHeader, Select, Skeleton, StatCard, Tabs } from '@/components/ui';
+import { Button, Card, ColorDot, EmptyState, IconButton, Input, Modal, PageHeader, Skeleton, StatCard, Tabs } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { exportCsvUrl, formatDuration, formatHours, formatMoney, useEntries, useMasterData, useReport } from './api';
-import { EntryDays, EntryEditor, TimerCard } from './components';
+import { EntryDays, EntryEditor, ProjectSelect, TimerCard } from './components';
 import { MasterDataView } from './MasterDataView';
 import { KimaiImportForm } from './KimaiImport';
 
@@ -220,25 +220,7 @@ function EntriesView() {
 }
 
 function ProjectFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const { data } = useMasterData();
-  const groups = useMemo(
-    () => (data?.customers ?? []).map((c) => ({ c, projects: (data?.projects ?? []).filter((p) => p.customerId === c.id) })).filter((g) => g.projects.length),
-    [data],
-  );
-  return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} className="h-8 w-48" aria-label="Projekt filtern">
-      <option value="">Alle Projekte</option>
-      {groups.map((g) => (
-        <optgroup key={g.c.id} label={g.c.name}>
-          {g.projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </Select>
-  );
+  return <ProjectSelect value={value} onChange={onChange} emptyOption="Alle Projekte" placeholder="Alle Projekte" className="h-8 w-60 max-w-full" />;
 }
 
 /* ═════════════════════════════ Auswertung ═════════════════════════════ */

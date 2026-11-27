@@ -103,12 +103,32 @@ export interface TtEntry {
   tags: string[];
   billable: boolean;
   hourlyRate: number | null;
+  /** Stundensatz von Hand festgelegt (sonst aus Tätigkeit → Projekt → Kunde) */
+  hourlyRateManual: boolean;
   fixedRate: number | null;
   /** Betrag des Eintrags */
   rate: number | null;
   currency: string;
   exported: boolean;
   imported: boolean;
+  /** Verknüpfungen mit anderen Systemen (z. B. Ticket, Lead) */
+  links: TtLink[];
+}
+
+/** Verknüpfung eines Zeiteintrags, z. B. mit einem Ticket */
+export interface TtLink {
+  /** Art, z. B. „ticket“ oder „lead“ (vom liefernden Modul festgelegt) */
+  type: string;
+  id: string;
+  /** Anzeige, z. B. „#1234 Server einrichten“ */
+  label: string;
+  url: string | null;
+}
+
+/** Nur Schlagworte und/oder Verknüpfungen ändern (Dauer bleibt unangetastet) */
+export interface TtEntryMetaInput {
+  tags?: string[];
+  links?: TtLink[];
 }
 
 export interface TtEntryInput {
@@ -121,6 +141,8 @@ export interface TtEntryInput {
   tags?: string[];
   billable?: boolean;
   fixedRate?: number | null;
+  /** Eigener Stundensatz; null/fehlend = automatisch aus Tätigkeit → Projekt → Kunde */
+  hourlyRate?: number | null;
 }
 
 export interface TtStartInput {
@@ -229,3 +251,17 @@ export interface TtImportStatus {
   startedAt: string;
   finishedAt: string | null;
 }
+
+/* ───────────────────────────── Einstellungen ───────────────────────────── */
+
+export interface TtSettings {
+  /** Dauer beim Speichern/Stoppen auf volle Blöcke aufrunden (Minuten; 0 = aus). Erlaubt: 0, 5, 10, 15, 30, 60 */
+  roundUp: number;
+  /**
+   * Status-Schlagworte, die in der Übersicht direkt an-/abhakbar sind (z. B. gebucht, Rechnung, fakturiert).
+   * Das erste ist der Haken an jedem Eintrag.
+   */
+  quickTags: string[];
+}
+
+export const TT_DEFAULT_QUICK_TAGS = ['gebucht', 'Rechnung', 'fakturiert'];

@@ -135,7 +135,7 @@ export default mod;
 
 | Punkt | Props | Beispiel |
 |-------|-------|----------|
-| `nav`, `routes` | – | eigene Bereiche; `nav[].useBadge` (React-Hook → Zahl) zeigt einen Zähler, z. B. ungelesene Chats |
+| `nav`, `routes` | – | eigene Bereiche; `nav[].useBadge` (React-Hook → Zahl) zeigt einen Zähler, z. B. ungelesene Chats; `nav[].Status` (Komponente, `variant` `rail`/`dot`/`icon`) zeigt einen Zustand unter dem Eintrag bzw. am Symbol, z. B. laufende Timer |
 | `settings` | – | Einstellungsseiten (jeder Benutzer) |
 | `admin` | – | Seiten im Admin-Bereich (nur Administratoren) |
 | `composerToolbar` | `ComposerExtensionProps` | KI-Assistent, Teams-Meeting |
@@ -145,7 +145,7 @@ export default mod;
 | `conversationActions` | `ConversationExtensionProps` | Aktionen für eine ganze Unterhaltung (KI-Zusammenfassung, Triage) |
 | `services` | – | unsichtbare Dienste (Benachrichtigungen, Chat-Ereignisse) |
 | `actions` | `ShellAction` | globale Aktionen ohne eigene Seite: Seitenleiste links, Befehlspalette, mobil im „Mehr“-Menü |
-| `sidePanels` | `SidePanelDef` | Panel in der Seitenleiste rechts (Kalender, Kontakte, Chat, KI-Chat, Telefon): eingeklappt ein Symbol, aufgeklappt ein Reiter unten; öffnen per `openSidePanel(id)` aus `layout/side-panel-store.ts`. Befehlspalette und „Mehr“-Menü bekommen automatisch eine Aktion dazu |
+| `sidePanels` | `SidePanelDef` | Panel in der Seitenleiste rechts (Kalender, Kontakte, Chat, KI-Chat, Telefon): eingeklappt ein Symbol, aufgeklappt ein Reiter unten; öffnen per `openSidePanel(id)` aus `layout/side-panel-store.ts`. Befehlspalette und „Mehr“-Menü bekommen automatisch eine Aktion dazu; `Status` (Komponente) setzt eine Markierung ans Symbol, z. B. Play bei laufendem Timer |
 
 `ComposerExtensionProps` bietet Zugriff auf den TipTap-Editor, den Entwurf und
 Hilfsfunktionen (`insertHtml`, `getSelectedText`, `replaceContent` …), siehe

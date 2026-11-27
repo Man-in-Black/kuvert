@@ -5,13 +5,13 @@
  * Abschalten: KUVERT_DISABLED_MODULES=timetrack
  */
 import { z } from 'zod';
-import type { TtEntryList, TtKimaiTestResult, TtReport, TtReportRow } from '@kuvert/shared';
+import type { TtEntryList, TtKimaiTestResult, TtReport, TtReportRow, TtSettings } from '@kuvert/shared';
 import { audit } from '../../core/audit.js';
 import { BadRequestError } from '../../core/errors.js';
 import { defineModule } from '../../core/module.js';
 import { parse } from '../../routes/util.js';
 import { KimaiClient, importStatus, kimaiConn, startKimaiImport } from './kimai.js';
-import { entries, masterData, migrations, toIso } from './store.js';
+import { entries, masterData, migrations, ROUND_UP_OPTIONS, toIso, ttSettings } from './store.js';
 
 type IdParams = { Params: { id: string } };
 
@@ -65,6 +65,23 @@ const entrySchema = z.object({
   tags,
   billable: z.boolean().optional(),
   fixedRate: rate,
+  hourlyRate: rate,
+});
+
+const linkSchema = z.object({
+  type: z.string().min(1).max(40),
+  id: z.string().min(1).max(100),
+  label: z.string().min(1).max(300),
+  url: z
+    .string()
+    .max(2000)
+    .regex(/^https?:\/\//i, 'nur http(s)-Links')
+    .nullable(),
+});
+
+const metaSchema = z.object({
+  tags: z.array(z.string().max(100)).max(30).optional(),
+  links: z.array(linkSchema).max(20).optional(),
 });
 
 const startSchema = z.object({
@@ -181,13 +198,12 @@ export default defineModule({
 
     /* ═════════════════════════════ Timer ═════════════════════════════ */
 
-    app.get('/active', async (req) => ({ entry: entries.running(req.user.id) }));
+    app.get('/active', async (req) => ({ entries: entries.running(req.user.id) }));
 
-    /** Neuen Timer starten – ein laufender wird vorher gestoppt (wie in Kimai) */
+    /** Neuen Timer starten – laufende Timer laufen weiter (mehrere gleichzeitig möglich) */
     app.post('/start', async (req) => {
       const b = parse(startSchema, req.body);
       const now = new Date();
-      entries.stop(req.user.id, now);
       const entry = entries.create(req.user.id, {
         projectId: b.projectId,
         activityId: b.activityId ?? null,
@@ -201,25 +217,49 @@ export default defineModule({
       return entry;
     });
 
+    /** Einen Timer (id) oder alle laufenden stoppen */
     app.post('/stop', async (req) => {
-      const entry = entries.stop(req.user.id);
+      const b = parse(z.object({ id: z.string().min(1).max(100).optional() }), req.body ?? {});
+      const stopped = entries.stop(req.user.id, b.id);
       changed(req.user.id);
-      return { entry };
+      return { entries: stopped };
+    });
+
+    /* ═════════════════════════════ Einstellungen ═════════════════════════════ */
+
+    app.get('/settings', async (req): Promise<TtSettings> => ttSettings.get(req.user.id));
+
+    app.put('/settings', async (req): Promise<TtSettings> => {
+      const b = parse(
+        z.object({
+          roundUp: z
+            .number()
+            .int()
+            .refine((v) => (ROUND_UP_OPTIONS as readonly number[]).includes(v), 'erlaubt: 0, 5, 10, 15, 30, 60')
+            .optional(),
+          quickTags: z.array(z.string().max(100)).max(8).optional(),
+        }),
+        req.body,
+      );
+      const cur = ttSettings.get(req.user.id);
+      ttSettings.set(req.user.id, { roundUp: b.roundUp ?? cur.roundUp, quickTags: b.quickTags ?? cur.quickTags });
+      return ttSettings.get(req.user.id);
     });
 
     /** Eintrag mit gleichen Angaben neu starten */
     app.post<IdParams>('/entries/:id/restart', async (req) => {
       const src = entries.get(req.user.id, req.params.id);
       const now = new Date();
-      entries.stop(req.user.id, now);
       const entry = entries.create(req.user.id, {
         projectId: src.projectId,
         activityId: src.activityId,
         begin: now.toISOString(),
         end: null,
         description: src.description,
-        tags: src.tags,
+        // Status-Schlagworte (gebucht, Rechnung …) gelten nur für den alten Eintrag
+        tags: src.tags.filter((t) => !ttSettings.get(req.user.id).quickTags.some((q) => q.toLowerCase() === t.toLowerCase())),
         billable: src.billable,
+        hourlyRate: src.hourlyRateManual ? src.hourlyRate : null,
       });
       changed(req.user.id);
       return entry;
@@ -243,7 +283,11 @@ export default defineModule({
       return entries.list(req.user.id, { ...q, q: q.q?.trim() || undefined });
     });
 
-    app.get('/recent', async (req) => entries.recent(req.user.id));
+    /** Zuletzt verwendet – ohne Status-Schlagworte, damit ein Neustart nicht schon „gebucht“ ist */
+    app.get('/recent', async (req) => {
+      const quick = new Set(ttSettings.get(req.user.id).quickTags.map((t) => t.toLowerCase()));
+      return entries.recent(req.user.id).map((r) => ({ ...r, tags: r.tags.filter((t) => !quick.has(t.toLowerCase())) }));
+    });
 
     app.get('/tags', async (req) => entries.tags(req.user.id));
 
@@ -258,6 +302,7 @@ export default defineModule({
         tags: b.tags ?? [],
         billable: b.billable,
         fixedRate: b.fixedRate,
+        hourlyRate: b.hourlyRate,
       });
       changed(req.user.id);
       return entry;
@@ -274,7 +319,16 @@ export default defineModule({
         tags: b.tags ?? [],
         billable: b.billable,
         fixedRate: b.fixedRate,
+        hourlyRate: b.hourlyRate,
       });
+      changed(req.user.id);
+      return entry;
+    });
+
+    /** Nur Schlagworte bzw. Verknüpfungen ändern (Haken „gebucht“, Ticket verknüpfen …) */
+    app.patch<IdParams>('/entries/:id/meta', async (req) => {
+      const b = parse(metaSchema, req.body);
+      const entry = entries.setMeta(req.user.id, req.params.id, b);
       changed(req.user.id);
       return entry;
     });
@@ -361,7 +415,7 @@ export default defineModule({
       const date = new Intl.DateTimeFormat('de-DE', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
       const time = new Intl.DateTimeFormat('de-DE', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
       const num = (n: number | null) => (n == null ? '' : n.toFixed(2).replace('.', ','));
-      const lines = [['Datum', 'Beginn', 'Ende', 'Dauer (h)', 'Kunde', 'Projekt', 'Tätigkeit', 'Beschreibung', 'Schlagworte', 'Abrechenbar', 'Stundensatz', 'Betrag', 'Währung']];
+      const lines = [['Datum', 'Beginn', 'Ende', 'Dauer (h)', 'Kunde', 'Projekt', 'Tätigkeit', 'Beschreibung', 'Schlagworte', 'Verknüpfungen', 'Abrechenbar', 'Stundensatz', 'Betrag', 'Währung']];
       for (const e of entries.range(req.user.id, from, to)) {
         lines.push([
           date.format(new Date(e.begin)),
@@ -373,6 +427,7 @@ export default defineModule({
           e.activityName ?? '',
           e.description ?? '',
           e.tags.join(', '),
+          e.links.map((l) => l.label).join(', '),
           e.billable ? 'ja' : 'nein',
           num(e.hourlyRate),
           num(e.rate),

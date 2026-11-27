@@ -379,11 +379,11 @@ async function runImport(
   status.total = null;
   const findEntry = db.prepare('SELECT id, user_id FROM tt_entries WHERE ext_source = ? AND ext_id = ?');
   const insert = db.prepare(
-    `INSERT INTO tt_entries (user_id, project_id, activity_id, begin_at, end_at, duration, description, tags_json, billable, hourly_rate, fixed_rate, rate, exported, id, ext_source, ext_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO tt_entries (user_id, project_id, activity_id, begin_at, end_at, duration, description, tags_json, billable, hourly_rate, fixed_rate, rate, exported, rate_manual, id, ext_source, ext_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   );
   const update = db.prepare(
-    `UPDATE tt_entries SET project_id=?, activity_id=?, begin_at=?, end_at=?, duration=?, description=?, tags_json=?, billable=?, hourly_rate=?, fixed_rate=?, rate=?, exported=?,
+    `UPDATE tt_entries SET project_id=?, activity_id=?, begin_at=?, end_at=?, duration=?, description=?, tags_json=?, billable=?, hourly_rate=?, fixed_rate=?, rate=?, exported=?, rate_manual=?,
        updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`,
   );
 
@@ -416,6 +416,8 @@ async function runImport(
           t.fixedRate ?? null,
           t.rate ?? null,
           t.exported ? 1 : 0,
+          // Kimai-Stundensatz bleibt erhalten, auch wenn der Eintrag später bearbeitet wird
+          t.hourlyRate != null ? 1 : 0,
         ];
         const existing = findEntry.get(src, t.id) as { id: string; user_id: string } | undefined;
         if (existing) {

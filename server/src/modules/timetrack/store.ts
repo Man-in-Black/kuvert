@@ -15,8 +15,11 @@ import type {
   TtProject,
   TtProjectInput,
   TtRecent,
+  TtLink,
+  TtSettings,
 } from '@kuvert/shared';
-import { getDb } from '../../core/db.js';
+import { TT_DEFAULT_QUICK_TAGS } from '@kuvert/shared';
+import { getDb, kv } from '../../core/db.js';
 import { uuid } from '../../core/crypto.js';
 import { AppError, BadRequestError, NotFoundError } from '../../core/errors.js';
 
@@ -106,6 +109,24 @@ export const migrations = [
       CREATE UNIQUE INDEX tt_entries_running ON tt_entries(user_id) WHERE end_at IS NULL;
     `,
   },
+  {
+    // Mehrere Timer gleichzeitig erlauben
+    id: 'timetrack-002',
+    sql: `
+      DROP INDEX IF EXISTS tt_entries_running;
+      CREATE INDEX tt_entries_open ON tt_entries(user_id) WHERE end_at IS NULL;
+    `,
+  },
+  {
+    // Verknüpfungen (Ticket, Lead …)
+    id: 'timetrack-003',
+    sql: `
+      ALTER TABLE tt_entries ADD COLUMN links_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE tt_entries ADD COLUMN rate_manual INTEGER NOT NULL DEFAULT 0;
+      -- Aus Kimai übernommene Stundensätze gelten als von Hand festgelegt (Stammdaten haben keine)
+      UPDATE tt_entries SET rate_manual = 1 WHERE ext_source IS NOT NULL AND hourly_rate IS NOT NULL;
+    `,
+  },
 ];
 
 /* ═════════════════════════════ Hilfsfunktionen ═════════════════════════════ */
@@ -122,7 +143,7 @@ const nn = (v: string | null | undefined) => {
   return s ? s : null;
 };
 
-const cleanTags = (tags: string[] | undefined) => [...new Set((tags ?? []).map((t) => t.trim()).filter(Boolean))].slice(0, 30);
+const cleanTags = (tags: string[] | undefined) => cleanTagList(tags);
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -328,8 +349,10 @@ interface EntryRow {
   duration: number | null;
   description: string | null;
   tags_json: string;
+  links_json: string;
   billable: number;
   hourly_rate: number | null;
+  rate_manual: number;
   fixed_rate: number | null;
   rate: number | null;
   exported: number;
@@ -374,12 +397,36 @@ export function toEntry(r: EntryRow, now = Date.now()): TtEntry {
     tags,
     billable: !!r.billable,
     hourlyRate: r.hourly_rate,
+    hourlyRateManual: !!r.rate_manual,
     fixedRate: r.fixed_rate,
     rate: r.end_at ? r.rate : r.fixed_rate ?? (r.hourly_rate != null ? round2((r.hourly_rate * duration) / 3600) : null),
     currency: r.currency,
     exported: !!r.exported,
     imported: !!r.ext_source,
+    links: parseLinks(r.links_json),
   };
+}
+
+function parseLinks(json: string | null | undefined): TtLink[] {
+  try {
+    const v = JSON.parse(json || '[]') as TtLink[];
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Schlagworte bereinigen (Duplikate ohne Groß-/Kleinschreibung entfernen) */
+export function cleanTagList(tags: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of tags ?? []) {
+    const v = t.trim().slice(0, 100);
+    if (!v || seen.has(v.toLowerCase())) continue;
+    seen.add(v.toLowerCase());
+    out.push(v);
+  }
+  return out.slice(0, 30);
 }
 
 /** Stundensatz aus Tätigkeit → Projekt → Kunde */
@@ -401,6 +448,38 @@ function checkRefs(projectId: string, activityId: string | null) {
   return p;
 }
 
+/** Höchstzahl gleichzeitig laufender Timer je Benutzer */
+const MAX_RUNNING = 10;
+
+export const ROUND_UP_OPTIONS = [0, 5, 10, 15, 30, 60] as const;
+
+/** Persönliche Einstellungen der Zeiterfassung */
+export const ttSettings = {
+  get(userId: string): TtSettings {
+    const s = kv.get<Partial<TtSettings>>('timetrack.settings', userId);
+    const roundUp = s?.roundUp;
+    return {
+      roundUp: typeof roundUp === 'number' && (ROUND_UP_OPTIONS as readonly number[]).includes(roundUp) ? roundUp : 15,
+      quickTags: Array.isArray(s?.quickTags) ? cleanTagList(s.quickTags).slice(0, 8) : [...TT_DEFAULT_QUICK_TAGS],
+    };
+  },
+  set(userId: string, v: TtSettings) {
+    kv.set('timetrack.settings', userId, v);
+  },
+};
+
+/**
+ * Ende so verschieben, dass die Dauer ein volles Vielfaches von `minutes` ist – immer aufgerundet
+ * (6 min → 15, 17 min → 30). Angefangene Sekunden zählen nicht, mindestens ein Block.
+ */
+export function roundUpEnd(beginIso: string, endIso: string, minutes: number): string {
+  if (!minutes) return endIso;
+  const block = minutes * 60;
+  const whole = Math.floor((Date.parse(endIso) - Date.parse(beginIso)) / 60_000) * 60;
+  const sec = Math.max(block, Math.ceil(whole / block) * block);
+  return new Date(Date.parse(beginIso) + sec * 1000).toISOString();
+}
+
 export interface EntryFilter {
   from?: string;
   to?: string;
@@ -420,6 +499,8 @@ export interface EntryWrite {
   tags: string[];
   billable?: boolean;
   fixedRate?: number | null;
+  /** Eigener Stundensatz; null/undefined = automatisch */
+  hourlyRate?: number | null;
 }
 
 export const entries = {
@@ -429,9 +510,10 @@ export const entries = {
     return toEntry(r);
   },
 
-  running(userId: string): TtEntry | null {
-    const r = db().prepare(`${ENTRY_SELECT} WHERE e.user_id = ? AND e.end_at IS NULL`).get(userId) as EntryRow | undefined;
-    return r ? toEntry(r) : null;
+  /** Laufende Timer, ältester zuerst */
+  running(userId: string): TtEntry[] {
+    const now = Date.now();
+    return (db().prepare(`${ENTRY_SELECT} WHERE e.user_id = ? AND e.end_at IS NULL ORDER BY e.begin_at`).all(userId) as EntryRow[]).map((r) => toEntry(r, now));
   },
 
   /** Einträge mit Beginn in [from, to), neueste zuerst */
@@ -459,9 +541,11 @@ export const entries = {
       args.push(f.activityId);
     }
     if (f.q) {
-      where.push(`(e.description LIKE ? ESCAPE '\\' OR e.tags_json LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\' OR c.name LIKE ? ESCAPE '\\' OR a.name LIKE ? ESCAPE '\\')`);
+      where.push(
+        `(e.description LIKE ? ESCAPE '\\' OR e.tags_json LIKE ? ESCAPE '\\' OR e.links_json LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\' OR c.name LIKE ? ESCAPE '\\' OR a.name LIKE ? ESCAPE '\\')`,
+      );
       const like = `%${f.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
-      args.push(like, like, like, like, like);
+      args.push(like, like, like, like, like, like);
     }
     const limit = Math.min(f.limit ?? 500, 2000);
     const rows = db()
@@ -477,7 +561,7 @@ export const entries = {
          WHERE ${where.join(' AND ')}`,
       )
       .get(...args) as { s: number; running: number | null };
-    const runningExtra = sum.running ? (items.find((i) => !i.end)?.duration ?? 0) : 0;
+    const runningExtra = sum.running ? items.filter((i) => !i.end).reduce((acc, i) => acc + i.duration, 0) : 0;
     return { items, total: sum.s + runningExtra, truncated };
   },
 
@@ -494,8 +578,8 @@ export const entries = {
     const vals = this.prepare(userId, w, null);
     db()
       .prepare(
-        `INSERT INTO tt_entries (project_id, activity_id, begin_at, end_at, duration, description, tags_json, billable, hourly_rate, fixed_rate, rate, id, user_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO tt_entries (project_id, activity_id, begin_at, end_at, duration, description, tags_json, billable, hourly_rate, fixed_rate, rate, rate_manual, id, user_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(...vals, id, userId);
     return this.get(userId, id);
@@ -506,7 +590,7 @@ export const entries = {
     const vals = this.prepare(userId, w, id);
     db()
       .prepare(
-        `UPDATE tt_entries SET project_id=?, activity_id=?, begin_at=?, end_at=?, duration=?, description=?, tags_json=?, billable=?, hourly_rate=?, fixed_rate=?, rate=?, updated_at=${NOW}
+        `UPDATE tt_entries SET project_id=?, activity_id=?, begin_at=?, end_at=?, duration=?, description=?, tags_json=?, billable=?, hourly_rate=?, fixed_rate=?, rate=?, rate_manual=?, updated_at=${NOW}
          WHERE id=? AND user_id=?`,
       )
       .run(...vals, id, userId);
@@ -517,37 +601,54 @@ export const entries = {
   prepare(userId: string, w: EntryWrite, selfId: string | null) {
     const p = checkRefs(w.projectId, w.activityId);
     const begin = toIso(w.begin, 'Beginn');
-    const end = w.end ? toIso(w.end, 'Ende') : null;
+    let end = w.end ? toIso(w.end, 'Ende') : null;
     if (end && end <= begin) throw new BadRequestError('Das Ende muss nach dem Beginn liegen');
+    // Dauer auf den nächsten Block aufrunden (Einstellung des Benutzers, Standard 15 min)
+    if (end) end = roundUpEnd(begin, end, ttSettings.get(userId).roundUp);
     if (end && Date.parse(end) - Date.parse(begin) > 7 * 86400_000) throw new BadRequestError('Ein Eintrag darf höchstens sieben Tage lang sein');
     if (!end) {
-      const other = this.running(userId);
-      if (other && other.id !== selfId) throw new AppError(409, 'tt_running', 'Es läuft bereits ein Timer – bitte zuerst stoppen');
+      const others = this.running(userId).filter((r) => r.id !== selfId);
+      if (others.length >= MAX_RUNNING) throw new AppError(409, 'tt_running', `Es laufen bereits ${others.length} Timer – bitte zuerst einen stoppen`);
       if (Date.parse(begin) > Date.now() + 60_000) throw new BadRequestError('Ein laufender Timer kann nicht in der Zukunft beginnen');
     }
     const duration = end ? Math.round((Date.parse(end) - Date.parse(begin)) / 1000) : null;
-    const hourly = hourlyRateFor(w.projectId, w.activityId);
+    const manual = w.hourlyRate != null;
+    const hourly = manual ? w.hourlyRate! : hourlyRateFor(w.projectId, w.activityId);
     const fixed = w.fixedRate ?? null;
     const rate = duration == null ? null : fixed ?? (hourly != null ? round2((hourly * duration) / 3600) : null);
     const billable = w.billable ?? !!p.billable;
-    return [w.projectId, w.activityId, begin, end, duration, nn(w.description), JSON.stringify(cleanTags(w.tags)), billable ? 1 : 0, hourly, fixed, rate] as const;
+    return [w.projectId, w.activityId, begin, end, duration, nn(w.description), JSON.stringify(cleanTags(w.tags)), billable ? 1 : 0, hourly, fixed, rate, manual ? 1 : 0] as const;
   },
 
-  /** Laufenden Timer beenden (end = jetzt); liefert den gestoppten Eintrag */
-  stop(userId: string, at = new Date()): TtEntry | null {
-    const run = this.running(userId);
-    if (!run) return null;
-    const endIso = new Date(Math.max(at.getTime(), Date.parse(run.begin) + 1000)).toISOString();
-    return this.update(userId, run.id, {
-      projectId: run.projectId,
-      activityId: run.activityId,
-      begin: run.begin,
-      end: endIso,
-      description: run.description,
-      tags: run.tags,
-      billable: run.billable,
-      fixedRate: run.fixedRate,
-    });
+  /** Laufende Timer beenden (end = jetzt): einen bestimmten (id) oder alle; liefert die gestoppten */
+  stop(userId: string, id?: string, at = new Date()): TtEntry[] {
+    const list = this.running(userId).filter((r) => !id || r.id === id);
+    if (id && !list.length) throw new AppError(409, 'tt_not_running', 'Dieser Timer läuft nicht (mehr)');
+    return list.map((run) =>
+      this.update(userId, run.id, {
+        projectId: run.projectId,
+        activityId: run.activityId,
+        begin: run.begin,
+        end: new Date(Math.max(at.getTime(), Date.parse(run.begin) + 1000)).toISOString(),
+        description: run.description,
+        tags: run.tags,
+        billable: run.billable,
+        fixedRate: run.fixedRate,
+        hourlyRate: run.hourlyRateManual ? run.hourlyRate : null,
+      }),
+    );
+  },
+
+  /** Nur Schlagworte/Verknüpfungen ändern – ohne Rundung oder Neuberechnung */
+  setMeta(userId: string, id: string, m: { tags?: string[]; links?: TtLink[] }): TtEntry {
+    this.get(userId, id);
+    if (m.tags) db().prepare(`UPDATE tt_entries SET tags_json = ?, updated_at = ${NOW} WHERE id = ? AND user_id = ?`).run(JSON.stringify(cleanTagList(m.tags)), id, userId);
+    if (m.links) {
+      const seen = new Set<string>();
+      const links = m.links.filter((l) => !seen.has(`${l.type}:${l.id}`) && seen.add(`${l.type}:${l.id}`)).slice(0, 20);
+      db().prepare(`UPDATE tt_entries SET links_json = ?, updated_at = ${NOW} WHERE id = ? AND user_id = ?`).run(JSON.stringify(links), id, userId);
+    }
+    return this.get(userId, id);
   },
 
   delete(userId: string, id: string) {

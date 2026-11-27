@@ -5,7 +5,7 @@
  */
 import type { ComponentType, ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import type { AppInfo, AccountInfo } from '@kuvert/shared';
+import type { AppInfo, AccountInfo, TtEntry, TtLink } from '@kuvert/shared';
 import type { ComposerExtensionProps, ConversationExtensionProps, MessageExtensionProps } from '@/features/mail/extension-types';
 
 export interface NavItem {
@@ -17,6 +17,12 @@ export interface NavItem {
   order: number;
   /** React-Hook, der eine Zahl für ein Badge liefert (z. B. ungelesene Chatnachrichten); 0 = kein Badge */
   useBadge?: () => number;
+  /**
+   * Statusanzeige (z. B. laufender Timer), rendert null, wenn nichts anliegt:
+   * 'rail' = unter dem Eintrag in der ausgeklappten Leiste, 'dot' = Markierung am Symbol der
+   * eingeklappten Leiste, 'icon' = Markierung am Symbol der mobilen Navigation
+   */
+  Status?: ComponentType<{ variant: 'rail' | 'dot' | 'icon' }>;
 }
 
 /** Globale Aktion ohne eigene Seite (z. B. KI-Chat öffnen): Seitenleiste, Befehlspalette, mobil im „Mehr“-Menü */
@@ -52,6 +58,18 @@ export interface SidePanelDef {
   keywords?: string;
   /** React-Hook für ein Badge am Symbol (z. B. ungelesene Chatnachrichten); 0 = keins */
   useBadge?: () => number;
+  /** Markierung am Symbol (z. B. Play-Zeichen bei laufendem Timer); small = Reiter unten im Panel */
+  Status?: ComponentType<{ small?: boolean }>;
+}
+
+/** Erweiterung an einem Zeiteintrag (z. B. Ticket verknüpfen) */
+export interface TimeEntryExtensionProps {
+  entry: TtEntry;
+  /** Verknüpfung hinzufügen; markDone setzt zusätzlich das erste Status-Schlagwort (z. B. „gebucht“) */
+  addLink: (link: TtLink, opts?: { markDone?: boolean }) => Promise<void>;
+  /** Name des ersten Status-Schlagworts (z. B. „gebucht“) oder null */
+  doneTag: string | null;
+  compact?: boolean;
 }
 
 export interface RouteDef {
@@ -104,6 +122,8 @@ export interface WebModule {
   messageBanners?: ComponentType<MessageExtensionProps>[];
   /** Aktionen für eine ganze Unterhaltung (z. B. KI-Zusammenfassung des Verlaufs) */
   conversationActions?: ComponentType<ConversationExtensionProps>[];
+  /** Knöpfe an jedem Zeiteintrag der Zeiterfassung (z. B. Ticket oder Lead verknüpfen) */
+  timeEntryActions?: ComponentType<TimeEntryExtensionProps>[];
   /** Wird einmal nach dem Login gerendert (unsichtbare Dienste, z. B. Benachrichtigungen) */
   services?: ComponentType[];
 }

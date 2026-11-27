@@ -89,6 +89,23 @@ export default function CalendarPage() {
   const [range, setRange] = useState<RangeState | null>(null);
   const currentDate = useRef<Date>(new Date());
   const apis = useRef(new Map<string, CalendarApi>());
+  /** Bereich der Kalender – ändert sich seine Größe (Seitenleisten auf/zu), muss FullCalendar neu messen */
+  const areaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    // FullCalendar reagiert nur auf Fenstergrößen; Seitenleisten ändern aber nur den Inhaltsbereich
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => apis.current.forEach((api) => api.updateSize()));
+    });
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
+  }, []);
 
   const [detail, setDetail] = useState<CalendarEvent | null>(null);
   const [editor, setEditor] = useState<EditorInit | null>(null);
@@ -416,7 +433,7 @@ export default function CalendarPage() {
           <div className="border-b border-border bg-danger/10 px-4 py-1.5 text-xs text-danger">Termine konnten nicht geladen werden: {errorMessage(evError)}</div>
         )}
 
-        <div className="min-h-0 flex-1">
+        <div ref={areaRef} className="min-h-0 flex-1">
           {noCalendars ? (
             <EmptyState icon={<CalendarDays />} title="Kein Kalender verbunden">
               Verbinde ein Konto mit Kalender (Microsoft 365, Google, CalDAV, Nextcloud) in den{' '}

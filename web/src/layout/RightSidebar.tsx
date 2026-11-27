@@ -70,6 +70,7 @@ function Rail({ panels, active }: { panels: SidePanelDef[]; active: string | nul
         >
           <p.icon className="h-[18px] w-[18px] transition-transform group-hover:scale-105" />
           {p.useBadge && <PanelBadge useCount={p.useBadge} />}
+          {p.Status && <p.Status />}
         </button>
       ))}
     </aside>
@@ -147,6 +148,7 @@ function TabBar({ panels, active, pinned, mobile }: { panels: SidePanelDef[]; ac
               <span className="relative">
                 <p.icon className="h-4 w-4" />
                 {p.useBadge && <PanelBadge useCount={p.useBadge} small />}
+                {p.Status && <p.Status small />}
               </span>
               <span className="max-w-full truncate">{p.label}</span>
             </button>

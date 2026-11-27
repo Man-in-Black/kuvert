@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { Button, EmptyState, IconButton, Skeleton } from '@/components/ui';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { closeSidePanel, isSidebarPinned } from '@/layout/side-panel-store';
-import { formatDuration, useActiveEntry, useElapsed, useEntries, useMasterData } from './api';
+import { formatDuration, useEntries, useLiveTotal, useMasterData } from './api';
 import { EntryDays, EntryEditor, RecentList, TimerCard } from './components';
 
 export function TimePanel() {
@@ -19,10 +19,7 @@ export function TimePanel() {
   const { data: master, isLoading } = useMasterData();
   const today = startOfDay(new Date());
   const { data: todays } = useEntries({ from: today.toISOString(), to: addDays(today, 1).toISOString() });
-  const { data: active } = useActiveEntry();
-  const elapsed = useElapsed(active);
-  const runningToday = todays?.items.find((e) => !e.end);
-  const total = (todays?.total ?? 0) - (runningToday?.duration ?? 0) + (runningToday ? elapsed : 0);
+  const total = useLiveTotal(todays?.items ?? []);
 
   const open = (path: string) => {
     navigate(path);
