@@ -28,6 +28,8 @@ export const INDEX_UID = 'kuvert_messages';
 const PAGE = 100;
 const HEAD_PAGE = 50;
 const MAX_PARALLEL_ACCOUNTS = 3;
+/** Konten ohne offene Arbeit frühestens nach dieser Pause erneut prüfen (knapp unter dem 20-s-Takt) */
+const IDLE_RECHECK_MS = 15_000;
 const BODY_CONCURRENCY = 3;
 const MAX_BODY_CHARS = 30_000;
 const MAX_MESSAGE_SIZE_FOR_BODY = 15 * 1024 * 1024;
@@ -129,6 +131,14 @@ export class SearchIndexer {
   private reachable = false;
   private lastError: string | null = null;
   private running = new Set<string>();
+  /** Ende des letzten Laufs je Konto – bestimmt die Reihenfolge (wer am längsten wartet, zuerst) */
+  private lastRun = new Map<string, number>();
+  /** Konten, deren letzter Lauf noch Arbeit übrig ließ (Erstbefüllung, Volltext) */
+  private unfinished = new Set<string>();
+  /** Konten, die während ihres laufenden Durchgangs verworfen wurden (Neu indizieren, ausgeschlossen, gelöscht) */
+  private dropped = new Set<string>();
+  /** Konten, deren Index gerade geleert wird */
+  private purges = new Map<string, Promise<void>>();
   private currentFolder = new Map<string, string>();
   private forcedHead = new Set<string>();
   private timer: NodeJS.Timeout | null = null;
@@ -257,9 +267,15 @@ export class SearchIndexer {
   private async tick() {
     if (this.stopped || !this.configured) return;
     if (!this.available && !(await this.ensureIndex())) return;
-    for (const acc of this.eligible()) {
+    const now = Date.now();
+    const last = (a: AccountRecord) => this.lastRun.get(a.id) ?? 0;
+    // Reihum: Wer am längsten nicht dran war, kommt zuerst. In fester Reihenfolge belegten
+    // stets dieselben ersten Konten alle Plätze – jedes weitere Konto wurde nie indiziert.
+    const due = this.eligible()
+      .filter((a) => !this.running.has(a.id) && !this.purges.has(a.id) && (this.forcedHead.has(a.id) || this.unfinished.has(a.id) || now - last(a) >= IDLE_RECHECK_MS))
+      .sort((a, b) => last(a) - last(b));
+    for (const acc of due) {
       if (this.running.size >= MAX_PARALLEL_ACCOUNTS) break;
-      if (this.running.has(acc.id)) continue;
       // Nachrangig gegenüber der Oberfläche (z. B. Gmail-Quota-Drosselung)
       void runInBackground(() => this.runAccount(acc));
     }
@@ -272,13 +288,46 @@ export class SearchIndexer {
   }
 
   private save(accountId: string, st: AccountState) {
+    // Ein noch laufender Durchgang darf seinen alten Stand nicht über den verworfenen schreiben –
+    // sonst gälte das Konto als fertig indiziert, obwohl sein Index geleert wurde
+    if (this.dropped.has(accountId)) return;
     kv.set('search', accountId, st);
+  }
+
+  /** Durchgang beenden: Server fährt herunter oder das Konto wurde währenddessen verworfen */
+  private aborted(accountId: string): boolean {
+    return this.stopped || this.dropped.has(accountId);
+  }
+
+  /**
+   * Alle Dokumente des Kontos entfernen und abwarten, bis Meilisearch das verarbeitet hat.
+   * Solange startet kein neuer Durchgang: Er fände die alten Dokumente noch vor, hielte sie
+   * für bereits indiziert und überspränge sie – nach dem Leeren fehlten sie dann.
+   */
+  private purge(accountId: string): Promise<void> {
+    let p = this.purges.get(accountId);
+    if (!p) {
+      p = (async () => {
+        const client = this.getClient();
+        if (!client || !this.available) return;
+        const task = await client.deleteByFilter(INDEX_UID, `accountId = ${q(accountId)}`);
+        await client.waitTask(task.taskUid, 120_000);
+      })()
+        .catch((err) => this.log.debug({ err, accountId }, 'Suchindex: Konto nicht geleert'))
+        .finally(() => this.purges.delete(accountId));
+      this.purges.set(accountId, p);
+    }
+    return p;
   }
 
   async dropAccount(accountId: string) {
     kv.delete('search', accountId);
-    const client = this.getClient();
-    if (client && this.available) await client.deleteByFilter(INDEX_UID, `accountId = ${q(accountId)}`).catch(() => undefined);
+    // Beim nächsten Durchgang sofort wieder einreihen (Neu indizieren, erneut einschließen)
+    this.lastRun.delete(accountId);
+    this.unfinished.delete(accountId);
+    // Ein laufender Durchgang bricht ab und leert den Index selbst, sobald er nichts mehr schreibt
+    if (this.running.has(accountId)) this.dropped.add(accountId);
+    else await this.purge(accountId);
   }
 
   async reindexAccount(accountId: string) {
@@ -289,8 +338,11 @@ export class SearchIndexer {
   async rebuildAll() {
     const client = this.getClient();
     if (!client) return;
+    for (const id of this.running) this.dropped.add(id);
     for (const acc of this.eligible()) kv.delete('search', acc.id);
     kv.deleteScope('search');
+    this.lastRun.clear();
+    this.unfinished.clear();
     if (await client.getIndex(INDEX_UID)) await client.deleteIndex(INDEX_UID);
     this.indexReady = false;
     await this.ensureIndex();
@@ -338,7 +390,7 @@ export class SearchIndexer {
       const interval = Math.max(1, config.search.syncIntervalMin) * 60_000;
 
       for (const folder of wanted) {
-        if (this.stopped) break;
+        if (this.aborted(acc.id)) break;
         const fs = (st.folders[folder.id] ??= { name: folder.name, role: folder.role, done: false });
         fs.name = folder.name;
         fs.role = folder.role;
@@ -358,7 +410,7 @@ export class SearchIndexer {
       st.ready = wanted.every((f) => st.folders[f.id]?.done);
       // Sofort speichern: Konto ist ab jetzt über den Index durchsuchbar
       this.save(acc.id, st);
-      if (st.ready && !this.stopped) {
+      if (st.ready && !this.aborted(acc.id)) {
         this.currentFolder.set(acc.id, 'Volltext');
         more = (await this.enrichBodies(acc, mail, wanted.map((f) => f.id), 8)) || more;
       }
@@ -369,10 +421,19 @@ export class SearchIndexer {
       this.log.debug({ err, accountId: acc.id }, 'Suchindex: Synchronisation fehlgeschlagen');
     } finally {
       this.save(acc.id, st);
+      const dropped = this.dropped.has(acc.id);
+      // Was dieser Durchgang nach dem Verwerfen noch geschrieben hat, wieder entfernen – und zwar
+      // bevor das Konto als frei gilt, damit der Neuaufbau erst danach beginnt
+      if (dropped) await this.purge(acc.id);
+      this.dropped.delete(acc.id);
       this.currentFolder.delete(acc.id);
       this.running.delete(acc.id);
-      // Erstbefüllung zügig fortsetzen
-      if (more && !this.stopped) setTimeout(() => void this.tick(), 200).unref();
+      if (dropped) this.lastRun.delete(acc.id);
+      else this.lastRun.set(acc.id, Date.now());
+      if (more && !dropped) this.unfinished.add(acc.id);
+      else this.unfinished.delete(acc.id);
+      // Freien Platz gleich weitergeben: Erstbefüllung fortsetzen oder das nächste wartende Konto starten
+      if (!this.stopped) setTimeout(() => void this.tick(), 200).unref();
     }
   }
 
@@ -381,6 +442,7 @@ export class SearchIndexer {
     const cutoff = config.search.maxAgeDays > 0 ? Date.now() - config.search.maxAgeDays * 86_400_000 : 0;
     for (let i = 0; i < pages; i++) {
       const page = await mail.listMessages({ folderId: folder.id, cursor: fs.cursor ?? undefined, limit: PAGE });
+      if (this.aborted(acc.id)) return false;
       const items = cutoff ? page.items.filter((m) => new Date(m.date).getTime() >= cutoff) : page.items;
       await this.indexItems(acc, mail, folder, items);
       const reachedCutoff = cutoff > 0 && items.length < page.items.length;
@@ -414,6 +476,8 @@ export class SearchIndexer {
     let cursor: string | undefined;
     for (let i = 0; i < 1000; i++) {
       const page = await mail.listMessages({ folderId: folder.id, cursor, limit: 200 });
+      // Nur beim Verwerfen abbrechen – beim Herunterfahren würde der Abgleich sonst als erledigt gespeichert
+      if (this.dropped.has(acc.id)) return;
       for (const m of page.items) live.set(m.id, m);
       if (!page.nextCursor) break;
       cursor = page.nextCursor;
@@ -434,6 +498,7 @@ export class SearchIndexer {
       }
       if (res.results.length < 1000) break;
     }
+    if (this.dropped.has(acc.id)) return;
     if (remove.length) await client.deleteIds(INDEX_UID, remove);
     if (updates.length) await client.updateDocuments(INDEX_UID, updates);
   }
@@ -553,6 +618,8 @@ export class SearchIndexer {
         } catch (err) {
           this.log.debug({ err, folderId }, 'Suchindex: Texte nicht ladbar – nur Kopfdaten');
         }
+        // Nach dem Verwerfen nichts mehr schreiben: ein Teil-Update legte gelöschte Dokumente als Rümpfe neu an
+        if (this.aborted(acc.id)) return false;
         // Auch bei Fehlern hasBody=true setzen, damit nichts endlos erneut versucht wird
         const updates = docs.map((d) => {
           const t = texts.get(d.messageId);
