@@ -88,6 +88,7 @@ export type WebhookEvent = Exclude<
   | 'chat.categories'
   | 'chat.call'
   | 'threecx.call'
+  | 'timetrack.changed'
 >;
 
 export const WEBHOOK_EVENTS: WebhookEvent[] = ['mail.new', 'mail.changed', 'mail.triage', 'calendar.reminder', 'calendar.changed', 'account.status', 'send.status', 'chat.message'];
