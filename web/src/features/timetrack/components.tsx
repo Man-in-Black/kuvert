@@ -9,6 +9,7 @@ import { MoreHorizontal, Pencil, Play, Plus, Square, Tag, Trash2 } from 'lucide-
 import type { TtEntry, TtEntryInput } from '@kuvert/shared';
 import { Badge, Button, Checkbox, ColorDot, Dropdown, EmptyState, Field, IconButton, Input, Modal, Select, Textarea, useConfirm } from '@/components/ui';
 import { cn } from '@/lib/utils';
+import { TimeRangeEditor, type TimeRangeValue } from './TimeRangeEditor';
 import { formatClock, formatDuration, useElapsed, useEntryActions, useMasterLookup, useRecent, useTags, useActiveEntry } from './api';
 
 /* ═════════════════════════════ Auswahl ═════════════════════════════ */
@@ -386,16 +387,6 @@ function EntryRow({ e, compact, onEdit, onRestart, onDelete }: { e: TtEntry; com
 
 /* ═════════════════════════════ Eintrag bearbeiten/anlegen ═════════════════════════════ */
 
-const toDateInput = (d: Date) => format(d, 'yyyy-MM-dd');
-const toTimeInput = (d: Date) => format(d, 'HH:mm');
-
-/** Datum + Uhrzeit (lokal) → Date */
-function combine(date: string, time: string): Date | null {
-  if (!date || !/^\d{1,2}:\d{2}$/.test(time)) return null;
-  const d = new Date(`${date}T${time.padStart(5, '0')}:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
 /** entry = null → neuer Eintrag (optional mit Vorgabe-Tag) */
 export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | null; defaultDate?: Date; onClose: () => void }) {
   const { save } = useEntryActions();
@@ -410,13 +401,10 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
     d.setSeconds(0, 0);
     return d;
   })();
-  const initialEnd = entry?.end ? new Date(entry.end) : new Date(initialBegin.getTime() + 3600_000);
 
   const [projectId, setProjectId] = useState(entry?.projectId ?? recent?.[0]?.projectId ?? '');
   const [activityId, setActivityId] = useState(entry?.activityId ?? (entry ? '' : (recent?.[0]?.activityId ?? '')));
-  const [date, setDate] = useState(toDateInput(initialBegin));
-  const [beginTime, setBeginTime] = useState(toTimeInput(initialBegin));
-  const [endTime, setEndTime] = useState(toTimeInput(initialEnd));
+  const [range, setRange] = useState<TimeRangeValue>(() => ({ begin: initialBegin, duration: running ? null : entry ? entry.duration : 3600 }));
   const [description, setDescription] = useState(entry?.description ?? '');
   const [tags, setTags] = useState((entry?.tags ?? []).join(', '));
   const [billable, setBillable] = useState(entry?.billable ?? true);
@@ -435,15 +423,12 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
     setBillable((p?.billable ?? true) && (a?.billable ?? true));
   }, [projectId, activityId, projects, activities, billableTouched]);
 
-  const begin = combine(date, beginTime);
-  let end = running ? null : combine(date, endTime);
-  // Ende vor Beginn = über Mitternacht
-  if (begin && end && end <= begin) end = new Date(end.getTime() + 86400_000);
-  const duration = begin && end ? Math.round((end.getTime() - begin.getTime()) / 1000) : null;
-  const valid = !!projectId && !!begin && (running || !!end);
+  const begin = range.begin;
+  const end = range.duration == null ? null : new Date(begin.getTime() + range.duration * 1000);
+  const valid = !!projectId && !Number.isNaN(begin.getTime()) && (running || (range.duration ?? 0) >= 60);
 
   const submit = () => {
-    if (!valid || !begin) return;
+    if (!valid) return;
     const body: TtEntryInput = {
       projectId,
       activityId: activityId || null,
@@ -460,6 +445,7 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
   return (
     <Modal
       open
+      size="lg"
       onClose={onClose}
       title={entry ? (running ? 'Laufenden Eintrag bearbeiten' : 'Zeiteintrag bearbeiten') : 'Zeit nachtragen'}
       footer={
@@ -486,20 +472,7 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
             <ActivitySelect projectId={projectId} value={activityId} onChange={setActivityId} />
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-[1fr_7rem_7rem_auto]">
-          <Field label="Datum" className="col-span-2 sm:col-span-1">
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-          </Field>
-          <Field label="Von">
-            <Input type="time" value={beginTime} onChange={(e) => setBeginTime(e.target.value)} required />
-          </Field>
-          <Field label="Bis">
-            {running ? <Input value="läuft" disabled /> : <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required />}
-          </Field>
-          <div className="col-span-2 flex items-end pb-2 sm:col-span-1">
-            <span className="font-mono text-sm tabular-nums text-muted">{duration != null ? `${formatDuration(duration)} h` : ''}</span>
-          </div>
-        </div>
+        <TimeRangeEditor value={range} onChange={setRange} />
         <Field label="Beschreibung">
           <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Was wurde gemacht?" />
         </Field>
