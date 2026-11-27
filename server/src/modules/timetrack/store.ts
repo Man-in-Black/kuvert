@@ -454,7 +454,10 @@ const MAX_RUNNING = 10;
 
 export const ROUND_UP_OPTIONS = [0, 5, 10, 15, 30, 60] as const;
 
+export const ROUND_START_OPTIONS = [0, 5, 10, 15] as const;
+
 const validRound = (v: unknown): v is number => typeof v === 'number' && (ROUND_UP_OPTIONS as readonly number[]).includes(v);
+const validStart = (v: unknown): v is number => typeof v === 'number' && (ROUND_START_OPTIONS as readonly number[]).includes(v);
 
 /** Zentrale Vorgaben (Admin-Bereich) */
 export const ttAdmin = {
@@ -464,6 +467,7 @@ export const ttAdmin = {
       defaultHourlyRate: typeof s.defaultHourlyRate === 'number' && s.defaultHourlyRate >= 0 ? s.defaultHourlyRate : null,
       defaultCurrency: typeof s.defaultCurrency === 'string' && /^[A-Z]{3}$/.test(s.defaultCurrency) ? s.defaultCurrency : 'EUR',
       roundUp: validRound(s.roundUp) ? s.roundUp : 15,
+      roundStart: validStart(s.roundStart) ? s.roundStart : 5,
       roundUpLocked: !!s.roundUpLocked,
       quickTags: Array.isArray(s.quickTags) ? cleanTagList(s.quickTags).slice(0, 8) : [...TT_DEFAULT_QUICK_TAGS],
       quickTagsLocked: !!s.quickTagsLocked,
@@ -482,6 +486,7 @@ export const ttSettings = {
     const a = ttAdmin.get();
     return {
       roundUp: !a.roundUpLocked && validRound(s.roundUp) ? s.roundUp : a.roundUp,
+      roundStart: !a.roundUpLocked && validStart(s.roundStart) ? s.roundStart : a.roundStart,
       quickTags: !a.quickTagsLocked && Array.isArray(s.quickTags) ? cleanTagList(s.quickTags).slice(0, 8) : a.quickTags,
       roundUpLocked: a.roundUpLocked,
       quickTagsLocked: a.quickTagsLocked,
@@ -491,9 +496,13 @@ export const ttSettings = {
     };
   },
   /** Nur die persönlichen Felder speichern (undefined = zentrale Vorgabe verwenden) */
-  set(userId: string, v: { roundUp?: number; quickTags?: string[] }) {
+  set(userId: string, v: { roundUp?: number; roundStart?: number; quickTags?: string[] }) {
     const prev = kv.get<Partial<TtSettings>>('timetrack.settings', userId) ?? {};
-    kv.set('timetrack.settings', userId, { roundUp: v.roundUp ?? prev.roundUp, quickTags: v.quickTags ?? prev.quickTags });
+    kv.set('timetrack.settings', userId, {
+      roundUp: v.roundUp ?? prev.roundUp,
+      roundStart: v.roundStart ?? prev.roundStart,
+      quickTags: v.quickTags ?? prev.quickTags,
+    });
   },
 };
 
@@ -507,6 +516,15 @@ export function roundUpEnd(beginIso: string, endIso: string, minutes: number): s
   const whole = Math.floor((Date.parse(endIso) - Date.parse(beginIso)) / 60_000) * 60;
   const sec = Math.max(block, Math.ceil(whole / block) * block);
   return new Date(Date.parse(beginIso) + sec * 1000).toISOString();
+}
+
+/** Beginn eines gestarteten Timers auf volle `minutes` der Uhrzeit abrunden (13:59:40 → 13:55:00 bei 5 min) */
+export function roundDownStart(at: Date, minutes: number): string {
+  if (!minutes) return at.toISOString();
+  const block = minutes * 60_000;
+  // Raster an der lokalen Uhrzeit ausrichten (Zeitzonen mit 30/45-min-Versatz)
+  const offset = -at.getTimezoneOffset() * 60_000;
+  return new Date(Math.floor((at.getTime() + offset) / block) * block - offset).toISOString();
 }
 
 export interface EntryFilter {

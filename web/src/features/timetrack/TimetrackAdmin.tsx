@@ -11,6 +11,7 @@ import type { TtAdminSettings } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
 import { Button, Card, Field, Input, PageHeader, Select, Skeleton, Switch } from '@/components/ui';
 import { formatMoney, ttk } from './api';
+import { ROUND_START_OPTIONS } from './KimaiImport';
 
 const adminKey = ['timetrack', 'admin'] as const;
 
@@ -104,12 +105,19 @@ export function TimetrackAdminSection() {
         </div>
       </Card>
 
-      <Card title="Rundung" icon={<Clock />} description="Vorgabe für alle, die selbst nichts eingestellt haben. Festgelegt gilt sie für alle ohne Ausnahme.">
+      <Card title="Rundung" icon={<Clock />} description="Dauer beim Stoppen/Speichern aufrunden, Start eines Timers abrunden (z. B. 13:59 → 13:55). Vorgabe für alle, die selbst nichts eingestellt haben; festgelegt gilt sie für alle ohne Ausnahme.">
         <div className="flex flex-wrap items-center gap-4">
-          <Select value={String(form.roundUp)} onChange={(e) => set({ roundUp: Number(e.target.value) })} className="w-72 max-w-full" aria-label="Rundung">
+          <Select value={String(form.roundUp)} onChange={(e) => set({ roundUp: Number(e.target.value) })} className="w-72 max-w-full" aria-label="Rundung der Dauer">
             {ROUND_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
-                {o.label}
+                Dauer: {o.label}
+              </option>
+            ))}
+          </Select>
+          <Select value={String(form.roundStart)} onChange={(e) => set({ roundStart: Number(e.target.value) })} className="w-72 max-w-full" aria-label="Rundung des Starts">
+            {ROUND_START_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                Start: {o.label}
               </option>
             ))}
           </Select>

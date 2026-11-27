@@ -286,11 +286,18 @@ const ROUND_OPTIONS: { value: number; label: string }[] = [
   { value: 60, label: 'Auf volle Stunden aufrunden' },
 ];
 
+export const ROUND_START_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: 'Nicht abrunden (sekundengenau)' },
+  { value: 5, label: 'Auf 5 Minuten abrunden' },
+  { value: 10, label: 'Auf 10 Minuten abrunden' },
+  { value: 15, label: 'Auf 15 Minuten abrunden' },
+];
+
 function RoundingCard() {
   const qc = useQueryClient();
   const { data } = useTtSettings();
   const save = useMutation({
-    mutationFn: (roundUp: number) => api<TtSettings>('/timetrack/settings', { method: 'PUT', body: { roundUp } }),
+    mutationFn: (body: { roundUp?: number; roundStart?: number }) => api<TtSettings>('/timetrack/settings', { method: 'PUT', body }),
     onSuccess: (s) => {
       qc.setQueryData(ttk.settings, s);
       toast.success('Gespeichert');
@@ -298,22 +305,38 @@ function RoundingCard() {
     onError: (err) => toast.error(errorMessage(err)),
   });
   const value = data?.roundUp ?? 15;
+  const start = data?.roundStart ?? 5;
+  const locked = !data || save.isPending || data.roundUpLocked;
   return (
-    <Card title="Rundung" icon={<Clock />} description="Gilt beim Stoppen eines Timers und beim Speichern eines Eintrags. Aus Kimai importierte Zeiten bleiben, wie sie sind, bis du sie bearbeitest.">
-      <div className="flex flex-wrap items-center gap-3">
-        <Select value={String(value)} onChange={(e) => save.mutate(Number(e.target.value))} className="w-72 max-w-full" disabled={!data || save.isPending || data.roundUpLocked} aria-label="Rundung">
-          {ROUND_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </Select>
+    <Card title="Rundung" icon={<Clock />} description="Gilt beim Starten und Stoppen eines Timers und beim Speichern eines Eintrags. Aus Kimai importierte Zeiten bleiben, wie sie sind, bis du sie bearbeitest.">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="w-28 text-sm text-muted">Dauer</span>
+          <Select value={String(value)} onChange={(e) => save.mutate({ roundUp: Number(e.target.value) })} className="w-72 max-w-full" disabled={locked} aria-label="Rundung der Dauer">
+            {ROUND_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          {value > 0 && !data?.roundUpLocked && (
+            <span className="text-xs text-muted">
+              Beispiel: 6 min → {value} min, {value + 2} min → {value * 2} min
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="w-28 text-sm text-muted">Start</span>
+          <Select value={String(start)} onChange={(e) => save.mutate({ roundStart: Number(e.target.value) })} className="w-72 max-w-full" disabled={locked} aria-label="Rundung des Starts">
+            {ROUND_START_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          {start > 0 && !data?.roundUpLocked && <span className="text-xs text-muted">Beispiel: Start um 13:59 → 13:{String(60 - start).padStart(2, '0')}</span>}
+        </div>
         {data?.roundUpLocked && <span className="text-xs text-muted">Vom Administrator für alle festgelegt.</span>}
-        {value > 0 && !data?.roundUpLocked && (
-          <span className="text-xs text-muted">
-            Beispiel: 6 min → {value} min, {value + 2} min → {value * 2} min
-          </span>
-        )}
       </div>
     </Card>
   );

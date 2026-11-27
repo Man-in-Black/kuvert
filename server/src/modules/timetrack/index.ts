@@ -12,7 +12,7 @@ import { AppError, BadRequestError } from '../../core/errors.js';
 import { defineModule } from '../../core/module.js';
 import { parse } from '../../routes/util.js';
 import { KimaiClient, importStatus, kimaiConn, startKimaiImport } from './kimai.js';
-import { cleanTagList, entries, masterData, migrations, ROUND_UP_OPTIONS, toIso, ttAdmin, ttSettings } from './store.js';
+import { cleanTagList, entries, masterData, migrations, ROUND_START_OPTIONS, ROUND_UP_OPTIONS, roundDownStart, toIso, ttAdmin, ttSettings } from './store.js';
 import { requireAdmin } from '../../routes/admin.js';
 
 type IdParams = { Params: { id: string } };
@@ -100,6 +100,11 @@ const startSchema = z.object({
   tags,
   billable: z.boolean().optional(),
 });
+
+const roundStartZ = z
+  .number()
+  .int()
+  .refine((v) => (ROUND_START_OPTIONS as readonly number[]).includes(v), 'erlaubt: 0, 5, 10, 15');
 
 const rangeSchema = z.object({
   from: z.string().min(1).max(40),
@@ -221,11 +226,12 @@ export default defineModule({
     /** Neuen Timer starten – laufende Timer laufen weiter (mehrere gleichzeitig möglich) */
     app.post('/start', async (req) => {
       const b = parse(startSchema, req.body);
-      const now = new Date();
+      // Beginn auf volle Minuten abrunden (Einstellung, Standard 5 min: 13:59 → 13:55)
+      const begin = roundDownStart(new Date(), ttSettings.get(req.user.id).roundStart);
       const entry = entries.create(req.user.id, {
         projectId: b.projectId,
         activityId: b.activityId ?? null,
-        begin: now.toISOString(),
+        begin,
         end: null,
         description: b.description ?? null,
         tags: b.tags ?? [],
@@ -255,14 +261,15 @@ export default defineModule({
             .int()
             .refine((v) => (ROUND_UP_OPTIONS as readonly number[]).includes(v), 'erlaubt: 0, 5, 10, 15, 30, 60')
             .optional(),
+          roundStart: roundStartZ.optional(),
           quickTags: z.array(z.string().max(100)).max(8).optional(),
         }),
         req.body,
       );
       const admin = ttAdmin.get();
-      if (b.roundUp !== undefined && admin.roundUpLocked) throw new AppError(403, 'tt_locked', 'Die Rundung hat der Administrator für alle festgelegt');
+      if ((b.roundUp !== undefined || b.roundStart !== undefined) && admin.roundUpLocked) throw new AppError(403, 'tt_locked', 'Die Rundung hat der Administrator für alle festgelegt');
       if (b.quickTags !== undefined && admin.quickTagsLocked) throw new AppError(403, 'tt_locked', 'Die Status-Schlagworte hat der Administrator für alle festgelegt');
-      ttSettings.set(req.user.id, { roundUp: b.roundUp, quickTags: b.quickTags });
+      ttSettings.set(req.user.id, { roundUp: b.roundUp, roundStart: b.roundStart, quickTags: b.quickTags });
       return ttSettings.get(req.user.id, req.user.isAdmin);
     });
 
@@ -280,6 +287,7 @@ export default defineModule({
           defaultHourlyRate: rate,
           defaultCurrency: z.string().regex(/^[A-Za-z]{3}$/, 'Währung als ISO-Code, z. B. EUR'),
           roundUp: z.number().int().refine((v) => (ROUND_UP_OPTIONS as readonly number[]).includes(v), 'erlaubt: 0, 5, 10, 15, 30, 60'),
+          roundStart: roundStartZ.optional(),
           roundUpLocked: z.boolean(),
           quickTags: z.array(z.string().max(100)).max(8),
           quickTagsLocked: z.boolean(),
@@ -287,7 +295,7 @@ export default defineModule({
         }),
         req.body,
       );
-      ttAdmin.set({ ...b, defaultHourlyRate: b.defaultHourlyRate ?? null, defaultCurrency: b.defaultCurrency.toUpperCase(), quickTags: cleanTagList(b.quickTags) });
+      ttAdmin.set({ ...b, roundStart: b.roundStart ?? ttAdmin.get().roundStart, defaultHourlyRate: b.defaultHourlyRate ?? null, defaultCurrency: b.defaultCurrency.toUpperCase(), quickTags: cleanTagList(b.quickTags) });
       audit.log('timetrack.admin_settings', { req, details: { ...b } });
       masterChanged();
       return ttAdmin.get();
@@ -296,15 +304,15 @@ export default defineModule({
     /** Eintrag mit gleichen Angaben neu starten */
     app.post<IdParams>('/entries/:id/restart', async (req) => {
       const src = entries.get(req.user.id, req.params.id);
-      const now = new Date();
+      const settings = ttSettings.get(req.user.id);
       const entry = entries.create(req.user.id, {
         projectId: src.projectId,
         activityId: src.activityId,
-        begin: now.toISOString(),
+        begin: roundDownStart(new Date(), settings.roundStart),
         end: null,
         description: src.description,
         // Status-Schlagworte (gebucht, Rechnung …) gelten nur für den alten Eintrag
-        tags: src.tags.filter((t) => !ttSettings.get(req.user.id).quickTags.some((q) => q.toLowerCase() === t.toLowerCase())),
+        tags: src.tags.filter((t) => !settings.quickTags.some((q) => q.toLowerCase() === t.toLowerCase())),
         billable: src.billable,
         hourlyRate: src.hourlyRateManual ? src.hourlyRate : null,
       });

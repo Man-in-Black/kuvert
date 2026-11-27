@@ -257,6 +257,8 @@ export interface TtImportStatus {
 export interface TtSettings {
   /** Dauer beim Speichern/Stoppen auf volle Blöcke aufrunden (Minuten; 0 = aus). Erlaubt: 0, 5, 10, 15, 30, 60 */
   roundUp: number;
+  /** Beginn eines gestarteten Timers auf volle Minuten abrunden (0 = aus). Erlaubt: 0, 5, 10, 15 – z. B. 13:59 → 13:55 */
+  roundStart: number;
   /**
    * Status-Schlagworte, die in der Übersicht direkt an-/abhakbar sind (z. B. gebucht, Rechnung, fakturiert).
    * Das erste ist der Haken an jedem Eintrag.
@@ -281,6 +283,8 @@ export interface TtAdminSettings {
   defaultCurrency: string;
   /** Rundung für alle (Minuten, 0 = aus); locked = Benutzer können nicht abweichen */
   roundUp: number;
+  /** Beginn gestarteter Timer abrunden (Minuten, 0 = aus); mit roundUpLocked ebenfalls festgelegt */
+  roundStart: number;
   roundUpLocked: boolean;
   /** Status-Schlagworte für alle; locked = Benutzer können nicht abweichen */
   quickTags: string[];
