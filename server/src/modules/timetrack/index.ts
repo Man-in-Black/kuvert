@@ -5,15 +5,24 @@
  * Abschalten: KUVERT_DISABLED_MODULES=timetrack
  */
 import { z } from 'zod';
-import type { TtEntryList, TtKimaiTestResult, TtReport, TtReportRow, TtSettings } from '@kuvert/shared';
+import type { FastifyRequest } from 'fastify';
+import type { TtAdminSettings, TtEntryList, TtKimaiTestResult, TtReport, TtReportRow, TtSettings } from '@kuvert/shared';
 import { audit } from '../../core/audit.js';
-import { BadRequestError } from '../../core/errors.js';
+import { AppError, BadRequestError } from '../../core/errors.js';
 import { defineModule } from '../../core/module.js';
 import { parse } from '../../routes/util.js';
 import { KimaiClient, importStatus, kimaiConn, startKimaiImport } from './kimai.js';
-import { entries, masterData, migrations, ROUND_UP_OPTIONS, toIso, ttSettings } from './store.js';
+import { cleanTagList, entries, masterData, migrations, ROUND_UP_OPTIONS, toIso, ttAdmin, ttSettings } from './store.js';
+import { requireAdmin } from '../../routes/admin.js';
 
 type IdParams = { Params: { id: string } };
+
+/** Stammdaten ändern – ggf. nur Administratoren (zentrale Vorgabe) */
+function requireMasterEdit(req: FastifyRequest) {
+  if (ttAdmin.get().masterDataAdminOnly && !req.user.isAdmin) {
+    throw new AppError(403, 'tt_master_admin_only', 'Kunden, Projekte und Tätigkeiten dürfen nur Administratoren ändern');
+  }
+}
 
 const optText = (max: number) => z.string().max(max).nullable().optional();
 const rate = z.number().min(0).max(1_000_000).nullable().optional();
@@ -149,48 +158,57 @@ export default defineModule({
     app.get('/masterdata', async () => masterData.all());
 
     app.post('/customers', async (req) => {
+      requireMasterEdit(req);
       const r = masterData.saveCustomer(null, parse(customerSchema, req.body));
       masterChanged();
       return r;
     });
     app.put<IdParams>('/customers/:id', async (req) => {
+      requireMasterEdit(req);
       const r = masterData.saveCustomer(req.params.id, parse(customerSchema, req.body));
       masterChanged();
       return r;
     });
     app.delete<IdParams>('/customers/:id', async (req) => {
+      requireMasterEdit(req);
       masterData.deleteCustomer(req.params.id);
       masterChanged();
       return { ok: true };
     });
 
     app.post('/projects', async (req) => {
+      requireMasterEdit(req);
       const r = masterData.saveProject(null, parse(projectSchema, req.body));
       masterChanged();
       return r;
     });
     app.put<IdParams>('/projects/:id', async (req) => {
+      requireMasterEdit(req);
       const r = masterData.saveProject(req.params.id, parse(projectSchema, req.body));
       masterChanged();
       return r;
     });
     app.delete<IdParams>('/projects/:id', async (req) => {
+      requireMasterEdit(req);
       masterData.deleteProject(req.params.id);
       masterChanged();
       return { ok: true };
     });
 
     app.post('/activities', async (req) => {
+      requireMasterEdit(req);
       const r = masterData.saveActivity(null, parse(activitySchema, req.body));
       masterChanged();
       return r;
     });
     app.put<IdParams>('/activities/:id', async (req) => {
+      requireMasterEdit(req);
       const r = masterData.saveActivity(req.params.id, parse(activitySchema, req.body));
       masterChanged();
       return r;
     });
     app.delete<IdParams>('/activities/:id', async (req) => {
+      requireMasterEdit(req);
       masterData.deleteActivity(req.params.id);
       masterChanged();
       return { ok: true };
@@ -227,7 +245,7 @@ export default defineModule({
 
     /* ═════════════════════════════ Einstellungen ═════════════════════════════ */
 
-    app.get('/settings', async (req): Promise<TtSettings> => ttSettings.get(req.user.id));
+    app.get('/settings', async (req): Promise<TtSettings> => ttSettings.get(req.user.id, req.user.isAdmin));
 
     app.put('/settings', async (req): Promise<TtSettings> => {
       const b = parse(
@@ -241,9 +259,38 @@ export default defineModule({
         }),
         req.body,
       );
-      const cur = ttSettings.get(req.user.id);
-      ttSettings.set(req.user.id, { roundUp: b.roundUp ?? cur.roundUp, quickTags: b.quickTags ?? cur.quickTags });
-      return ttSettings.get(req.user.id);
+      const admin = ttAdmin.get();
+      if (b.roundUp !== undefined && admin.roundUpLocked) throw new AppError(403, 'tt_locked', 'Die Rundung hat der Administrator für alle festgelegt');
+      if (b.quickTags !== undefined && admin.quickTagsLocked) throw new AppError(403, 'tt_locked', 'Die Status-Schlagworte hat der Administrator für alle festgelegt');
+      ttSettings.set(req.user.id, { roundUp: b.roundUp, quickTags: b.quickTags });
+      return ttSettings.get(req.user.id, req.user.isAdmin);
+    });
+
+    /* ═════════════════════════════ Admin: zentrale Vorgaben ═════════════════════════════ */
+
+    app.get('/admin/settings', async (req): Promise<TtAdminSettings> => {
+      requireAdmin(req);
+      return ttAdmin.get();
+    });
+
+    app.put('/admin/settings', async (req): Promise<TtAdminSettings> => {
+      requireAdmin(req);
+      const b = parse(
+        z.object({
+          defaultHourlyRate: rate,
+          defaultCurrency: z.string().regex(/^[A-Za-z]{3}$/, 'Währung als ISO-Code, z. B. EUR'),
+          roundUp: z.number().int().refine((v) => (ROUND_UP_OPTIONS as readonly number[]).includes(v), 'erlaubt: 0, 5, 10, 15, 30, 60'),
+          roundUpLocked: z.boolean(),
+          quickTags: z.array(z.string().max(100)).max(8),
+          quickTagsLocked: z.boolean(),
+          masterDataAdminOnly: z.boolean(),
+        }),
+        req.body,
+      );
+      ttAdmin.set({ ...b, defaultHourlyRate: b.defaultHourlyRate ?? null, defaultCurrency: b.defaultCurrency.toUpperCase(), quickTags: cleanTagList(b.quickTags) });
+      audit.log('timetrack.admin_settings', { req, details: { ...b } });
+      masterChanged();
+      return ttAdmin.get();
     });
 
     /** Eintrag mit gleichen Angaben neu starten */

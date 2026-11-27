@@ -256,12 +256,23 @@ function QuickTagsCard() {
           save.mutate(list.slice(0, 8));
         }}
       >
-        <Input value={value} onChange={(e) => setText(e.target.value)} placeholder="gebucht, Rechnung, fakturiert" className="min-w-[16rem] flex-1" aria-label="Status-Schlagworte" />
-        <Button type="submit" variant="primary" loading={save.isPending} disabled={!data || text === null}>
-          Speichern
-        </Button>
+        <Input
+          value={value}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="gebucht, Rechnung, fakturiert"
+          className="min-w-[16rem] flex-1"
+          aria-label="Status-Schlagworte"
+          disabled={data?.quickTagsLocked}
+        />
+        {!data?.quickTagsLocked && (
+          <Button type="submit" variant="primary" loading={save.isPending} disabled={!data || text === null}>
+            Speichern
+          </Button>
+        )}
       </form>
-      <p className="mt-2 text-xs text-muted">Durch Komma getrennt, höchstens 8. Reihenfolge zählt: das erste wird zum Haken.</p>
+      <p className="mt-2 text-xs text-muted">
+        {data?.quickTagsLocked ? 'Vom Administrator für alle festgelegt.' : 'Durch Komma getrennt, höchstens 8. Reihenfolge zählt: das erste wird zum Haken.'}
+      </p>
     </Card>
   );
 }
@@ -290,14 +301,15 @@ function RoundingCard() {
   return (
     <Card title="Rundung" icon={<Clock />} description="Gilt beim Stoppen eines Timers und beim Speichern eines Eintrags. Aus Kimai importierte Zeiten bleiben, wie sie sind, bis du sie bearbeitest.">
       <div className="flex flex-wrap items-center gap-3">
-        <Select value={String(value)} onChange={(e) => save.mutate(Number(e.target.value))} className="w-72 max-w-full" disabled={!data || save.isPending} aria-label="Rundung">
+        <Select value={String(value)} onChange={(e) => save.mutate(Number(e.target.value))} className="w-72 max-w-full" disabled={!data || save.isPending || data.roundUpLocked} aria-label="Rundung">
           {ROUND_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
           ))}
         </Select>
-        {value > 0 && (
+        {data?.roundUpLocked && <span className="text-xs text-muted">Vom Administrator für alle festgelegt.</span>}
+        {value > 0 && !data?.roundUpLocked && (
           <span className="text-xs text-muted">
             Beispiel: 6 min → {value} min, {value + 2} min → {value * 2} min
           </span>

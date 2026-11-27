@@ -539,7 +539,8 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
   // Automatischer Stundensatz: Tätigkeit → Projekt → Kunde
   const project = projects.get(projectId);
   const customer = project ? customers.get(project.customerId) : undefined;
-  const autoRate = (activityId ? activities.get(activityId)?.hourlyRate : null) ?? project?.hourlyRate ?? customer?.hourlyRate ?? null;
+  const { data: ttSettings } = useTtSettings();
+  const autoRate = (activityId ? activities.get(activityId)?.hourlyRate : null) ?? project?.hourlyRate ?? customer?.hourlyRate ?? ttSettings?.defaultHourlyRate ?? null;
   const currency = customer?.currency ?? 'EUR';
   const valid = !!projectId && !Number.isNaN(begin.getTime()) && (running || (range.duration ?? 0) >= 60) && hourlyRate !== undefined && fixedRate !== undefined;
 
@@ -599,7 +600,7 @@ export function EntryEditor({ entry, defaultDate, onClose }: { entry: TtEntry | 
         <div className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
           <Field
             label={`Stundensatz (${currency})`}
-            hint={rateText.trim() ? 'Eigener Satz für diesen Eintrag – leeren für automatisch.' : autoRate != null ? `Automatisch: ${formatMoney(autoRate, currency)} (Tätigkeit → Projekt → Kunde)` : 'Kein Stundensatz hinterlegt'}
+            hint={rateText.trim() ? 'Eigener Satz für diesen Eintrag – leeren für automatisch.' : autoRate != null ? `Automatisch: ${formatMoney(autoRate, currency)} (Tätigkeit → Projekt → Kunde → zentral)` : 'Kein Stundensatz hinterlegt'}
             error={hourlyRate === undefined ? 'Bitte eine Zahl angeben' : undefined}
           >
             <Input value={rateText} onChange={(e) => setRateText(e.target.value)} inputMode="decimal" placeholder={autoRate != null ? String(autoRate).replace('.', ',') : 'z. B. 95'} />

@@ -13,6 +13,7 @@ import { TimerNavStatus, TimerPanelStatus } from './status';
 const PageLazy = lazy(() => import('./TimePage').then((m) => ({ default: m.TimePage })));
 const PanelLazy = lazy(() => import('./TimePanel').then((m) => ({ default: m.TimePanel })));
 const SettingsLazy = lazy(() => import('./KimaiImport').then((m) => ({ default: m.TimetrackSettingsSection })));
+const AdminLazy = lazy(() => import('./TimetrackAdmin').then((m) => ({ default: m.TimetrackAdminSection })));
 
 const Fallback = () => <Skeleton className="m-4 h-40 rounded-2xl" />;
 
@@ -32,11 +33,23 @@ function TimetrackSettings() {
   );
 }
 
+function TimetrackAdmin() {
+  return (
+    <Suspense fallback={<Fallback />}>
+      <AdminLazy />
+    </Suspense>
+  );
+}
+
 /** Andere Fenster/Geräte: Timer, Einträge und Stammdaten aktuell halten */
 function TimetrackSync() {
   const qc = useQueryClient();
   useServerEvent('timetrack.changed', (e) => {
-    if (e.scope === 'masterdata') void qc.invalidateQueries({ queryKey: ['timetrack', 'master'] });
+    if (e.scope === 'masterdata') {
+      // Stammdaten oder zentrale Vorgaben (Stundensatz, Rundung, Rechte) geändert
+      void qc.invalidateQueries({ queryKey: ['timetrack', 'master'] });
+      void qc.invalidateQueries({ queryKey: ['timetrack', 'settings'] });
+    }
     else if (e.scope === 'import') void qc.invalidateQueries({ queryKey: ['timetrack', 'kimai'] });
     else void qc.invalidateQueries({ queryKey: ['timetrack'], predicate: (q) => q.queryKey[1] !== 'master' && q.queryKey[1] !== 'kimai' });
   });
@@ -61,6 +74,7 @@ const mod: WebModule = {
     },
   ],
   settings: [{ id: 'timetrack', label: 'Zeiterfassung', icon: Timer, order: 70, component: TimetrackSettings }],
+  admin: [{ id: 'timetrack', label: 'Zeiterfassung', icon: Timer, order: 58, component: TimetrackAdmin }],
   services: [TimetrackSync],
 };
 

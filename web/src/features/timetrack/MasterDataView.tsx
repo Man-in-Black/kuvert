@@ -11,7 +11,7 @@ import type { TtActivity, TtActivityInput, TtCustomer, TtCustomerInput, TtProjec
 import { api, errorMessage } from '@/lib/api';
 import { Badge, Button, Checkbox, ColorDot, Dropdown, Field, IconButton, Input, Modal, Select, Skeleton, Textarea, useConfirm } from '@/components/ui';
 import { cn } from '@/lib/utils';
-import { formatMoney, ttk, useMasterData } from './api';
+import { formatMoney, ttk, useMasterData, useTtSettings } from './api';
 
 type Kind = 'customers' | 'projects' | 'activities';
 type Editing =
@@ -53,6 +53,8 @@ export function MasterDataView() {
   const [editing, setEditing] = useState<Editing | null>(null);
   const { save, remove } = useMasterMutations();
   const { confirm, dialog } = useConfirm();
+  // Zentrale Vorgabe: ggf. dürfen nur Administratoren die Stammdaten ändern
+  const canEdit = useTtSettings().data?.canEditMasterData ?? true;
 
   const match = (s: string) => !q.trim() || s.toLowerCase().includes(q.trim().toLowerCase());
 
@@ -77,7 +79,7 @@ export function MasterDataView() {
     if (await confirm(`${KIND_LABEL[kind]} „${item.name}“ löschen?`, { danger: true })) remove.mutate({ kind, id: item.id });
   };
 
-  const menu = (kind: Kind, item: TtCustomer | TtProject | TtActivity, edit: () => void) => (
+  const menu = (kind: Kind, item: TtCustomer | TtProject | TtActivity, edit: () => void) => !canEdit ? undefined : (
     <Dropdown
       align="right"
       trigger={
@@ -102,7 +104,9 @@ export function MasterDataView() {
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Kunde oder Projekt suchen …" className="h-8 pl-8" />
         </div>
         <Checkbox checked={showHidden} onChange={setShowHidden} label="Ausgeblendete zeigen" />
-        <span className="text-xs text-muted">Kunden, Projekte und Tätigkeiten sind für alle Benutzer gemeinsam.</span>
+        <span className="text-xs text-muted">
+          Kunden, Projekte und Tätigkeiten sind für alle Benutzer gemeinsam{canEdit ? '.' : ' – ändern dürfen sie nur Administratoren.'}
+        </span>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -110,7 +114,7 @@ export function MasterDataView() {
           icon={<Building2 />}
           title="Kunden"
           count={customers.length}
-          onAdd={() => setEditing({ kind: 'customers', item: null })}
+          onAdd={canEdit ? () => setEditing({ kind: 'customers', item: null }) : undefined}
           addLabel="Kunde"
         >
           <Row active={!customerId} onClick={() => { setCustomerId(null); setProjectId(null); }}>
@@ -138,7 +142,7 @@ export function MasterDataView() {
           icon={<FolderKanban />}
           title="Projekte"
           count={projects.length}
-          onAdd={() => setEditing({ kind: 'projects', item: null, customerId: customerId ?? undefined })}
+          onAdd={canEdit ? () => setEditing({ kind: 'projects', item: null, customerId: customerId ?? undefined }) : undefined}
           addLabel="Projekt"
           addDisabled={!data.customers.length}
         >
@@ -165,12 +169,12 @@ export function MasterDataView() {
           icon={<ListChecks />}
           title={projectId ? 'Tätigkeiten des Projekts' : 'Allgemeine Tätigkeiten'}
           count={activities.length}
-          onAdd={() => setEditing({ kind: 'activities', item: null, projectId })}
+          onAdd={canEdit ? () => setEditing({ kind: 'activities', item: null, projectId }) : undefined}
           addLabel="Tätigkeit"
         >
           {activities.length === 0 && <p className="px-3 py-4 text-center text-xs text-muted">Keine Tätigkeiten</p>}
           {activities.map((a) => (
-            <Row key={a.id} hidden={!a.visible} menu={menu('activities', a, () => setEditing({ kind: 'activities', item: a }))} onClick={() => setEditing({ kind: 'activities', item: a })}>
+            <Row key={a.id} hidden={!a.visible} menu={menu('activities', a, () => setEditing({ kind: 'activities', item: a }))} onClick={canEdit ? () => setEditing({ kind: 'activities', item: a }) : undefined}>
               <ColorDot color={a.color ?? undefined} />
               <span className="min-w-0 flex-1 truncate text-sm">{a.name}</span>
               {a.projectId ? <Badge tone="primary">Projekt</Badge> : <Badge tone="neutral">allgemein</Badge>}
@@ -185,7 +189,7 @@ export function MasterDataView() {
   );
 }
 
-function Column({ icon, title, count, onAdd, addLabel, addDisabled, children }: { icon: ReactNode; title: string; count: number; onAdd: () => void; addLabel: string; addDisabled?: boolean; children: ReactNode }) {
+function Column({ icon, title, count, onAdd, addLabel, addDisabled, children }: { icon: ReactNode; title: string; count: number; onAdd?: () => void; addLabel: string; addDisabled?: boolean; children: ReactNode }) {
   return (
     <section className="flex max-h-[70vh] min-h-64 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
       <header className="flex items-center gap-2 border-b border-border px-4 py-2.5">
@@ -193,9 +197,11 @@ function Column({ icon, title, count, onAdd, addLabel, addDisabled, children }: 
         <span className="flex-1 text-sm font-semibold">
           {title} <span className="font-normal text-muted">({count})</span>
         </span>
-        <Button size="sm" variant="soft" icon={<Plus className="h-3.5 w-3.5" />} onClick={onAdd} disabled={addDisabled}>
-          {addLabel}
-        </Button>
+        {onAdd && (
+          <Button size="sm" variant="soft" icon={<Plus className="h-3.5 w-3.5" />} onClick={onAdd} disabled={addDisabled}>
+            {addLabel}
+          </Button>
+        )}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5">{children}</div>
     </section>

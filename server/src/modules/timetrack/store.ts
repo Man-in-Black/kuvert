@@ -15,6 +15,7 @@ import type {
   TtProject,
   TtProjectInput,
   TtRecent,
+  TtAdminSettings,
   TtLink,
   TtSettings,
 } from '@kuvert/shared';
@@ -255,7 +256,7 @@ export const masterData = {
   saveCustomer(id: string | null, b: TtCustomerInput): TtCustomer {
     const name = nn(b.name);
     if (!name) throw new BadRequestError('Name fehlt');
-    const vals = [name, nn(b.number), nn(b.comment), nn(b.color), (nn(b.currency) ?? 'EUR').toUpperCase(), b.hourlyRate ?? null, b.visible === false ? 0 : 1];
+    const vals = [name, nn(b.number), nn(b.comment), nn(b.color), (nn(b.currency) ?? ttAdmin.get().defaultCurrency).toUpperCase(), b.hourlyRate ?? null, b.visible === false ? 0 : 1];
     if (id) {
       this.customer(id);
       db()
@@ -435,7 +436,7 @@ function hourlyRateFor(projectId: string, activityId: string | null): number | n
   const a = activityId ? masterData.activity(activityId) : null;
   if (a?.hourly_rate != null) return a.hourly_rate;
   if (p.hourly_rate != null) return p.hourly_rate;
-  return masterData.customer(p.customer_id).hourly_rate;
+  return masterData.customer(p.customer_id).hourly_rate ?? ttAdmin.get().defaultHourlyRate;
 }
 
 /** Projekt und Tätigkeit prüfen: Tätigkeit muss global sein oder zum Projekt gehören */
@@ -453,18 +454,46 @@ const MAX_RUNNING = 10;
 
 export const ROUND_UP_OPTIONS = [0, 5, 10, 15, 30, 60] as const;
 
-/** Persönliche Einstellungen der Zeiterfassung */
-export const ttSettings = {
-  get(userId: string): TtSettings {
-    const s = kv.get<Partial<TtSettings>>('timetrack.settings', userId);
-    const roundUp = s?.roundUp;
+const validRound = (v: unknown): v is number => typeof v === 'number' && (ROUND_UP_OPTIONS as readonly number[]).includes(v);
+
+/** Zentrale Vorgaben (Admin-Bereich) */
+export const ttAdmin = {
+  get(): TtAdminSettings {
+    const s = kv.get<Partial<TtAdminSettings>>('timetrack', 'admin') ?? {};
     return {
-      roundUp: typeof roundUp === 'number' && (ROUND_UP_OPTIONS as readonly number[]).includes(roundUp) ? roundUp : 15,
-      quickTags: Array.isArray(s?.quickTags) ? cleanTagList(s.quickTags).slice(0, 8) : [...TT_DEFAULT_QUICK_TAGS],
+      defaultHourlyRate: typeof s.defaultHourlyRate === 'number' && s.defaultHourlyRate >= 0 ? s.defaultHourlyRate : null,
+      defaultCurrency: typeof s.defaultCurrency === 'string' && /^[A-Z]{3}$/.test(s.defaultCurrency) ? s.defaultCurrency : 'EUR',
+      roundUp: validRound(s.roundUp) ? s.roundUp : 15,
+      roundUpLocked: !!s.roundUpLocked,
+      quickTags: Array.isArray(s.quickTags) ? cleanTagList(s.quickTags).slice(0, 8) : [...TT_DEFAULT_QUICK_TAGS],
+      quickTagsLocked: !!s.quickTagsLocked,
+      masterDataAdminOnly: !!s.masterDataAdminOnly,
     };
   },
-  set(userId: string, v: TtSettings) {
-    kv.set('timetrack.settings', userId, v);
+  set(v: TtAdminSettings) {
+    kv.set('timetrack', 'admin', v);
+  },
+};
+
+/** Persönliche Einstellungen; ohne eigene Wahl bzw. bei Festlegung gilt die zentrale Vorgabe */
+export const ttSettings = {
+  get(userId: string, isAdmin = false): TtSettings {
+    const s = kv.get<Partial<TtSettings>>('timetrack.settings', userId) ?? {};
+    const a = ttAdmin.get();
+    return {
+      roundUp: !a.roundUpLocked && validRound(s.roundUp) ? s.roundUp : a.roundUp,
+      quickTags: !a.quickTagsLocked && Array.isArray(s.quickTags) ? cleanTagList(s.quickTags).slice(0, 8) : a.quickTags,
+      roundUpLocked: a.roundUpLocked,
+      quickTagsLocked: a.quickTagsLocked,
+      canEditMasterData: !a.masterDataAdminOnly || isAdmin,
+      defaultHourlyRate: a.defaultHourlyRate,
+      defaultCurrency: a.defaultCurrency,
+    };
+  },
+  /** Nur die persönlichen Felder speichern (undefined = zentrale Vorgabe verwenden) */
+  set(userId: string, v: { roundUp?: number; quickTags?: string[] }) {
+    const prev = kv.get<Partial<TtSettings>>('timetrack.settings', userId) ?? {};
+    kv.set('timetrack.settings', userId, { roundUp: v.roundUp ?? prev.roundUp, quickTags: v.quickTags ?? prev.quickTags });
   },
 };
 

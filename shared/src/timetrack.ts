@@ -262,6 +262,31 @@ export interface TtSettings {
    * Das erste ist der Haken an jedem Eintrag.
    */
   quickTags: string[];
+  /** Vom Administrator für alle festgelegt – nicht änderbar */
+  roundUpLocked: boolean;
+  quickTagsLocked: boolean;
+  /** Darf Kunden, Projekte und Tätigkeiten anlegen/ändern/löschen */
+  canEditMasterData: boolean;
+  /** Zentraler Stundensatz (letzte Stufe nach Tätigkeit → Projekt → Kunde) */
+  defaultHourlyRate: number | null;
+  /** Währung für neue Kunden */
+  defaultCurrency: string;
+}
+
+/** Zentrale Vorgaben der Zeiterfassung (Admin-Bereich) */
+export interface TtAdminSettings {
+  /** Gilt, wenn weder Tätigkeit noch Projekt noch Kunde einen Stundensatz haben */
+  defaultHourlyRate: number | null;
+  /** Währung für neue Kunden (ISO-Code) */
+  defaultCurrency: string;
+  /** Rundung für alle (Minuten, 0 = aus); locked = Benutzer können nicht abweichen */
+  roundUp: number;
+  roundUpLocked: boolean;
+  /** Status-Schlagworte für alle; locked = Benutzer können nicht abweichen */
+  quickTags: string[];
+  quickTagsLocked: boolean;
+  /** Kunden, Projekte und Tätigkeiten dürfen nur Administratoren anlegen, ändern und löschen */
+  masterDataAdminOnly: boolean;
 }
 
 export const TT_DEFAULT_QUICK_TAGS = ['gebucht', 'Rechnung', 'fakturiert'];
