@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Check, CheckCheck, Copy, Download, File as FileIcon, MoreHorizontal, Pencil, Phone, PhoneOff, Reply, SmilePlus, Trash2 } from 'lucide-react';
 import { CHAT_QUICK_REACTIONS, type ChatAttachment, type ChatCapabilities, type ChatCard, type ChatMessage, type ChatUser } from '@kuvert/shared';
 import { Dropdown, Modal } from '@/components/ui';
+import { ZoomableImage } from '@/components/ZoomableImage';
 import { cn, formatSize } from '@/lib/utils';
 import { FULL_CAPS, fileUrl, userName } from './api';
 import { EmojiGrid, Popover, UserAvatar } from './components';
@@ -307,9 +308,9 @@ function MessageItemImpl(p: MessageItemProps) {
       {lightbox && (
         <Modal open onClose={() => setLightbox(null)} title={lightbox.filename} size="xl">
           <div className="flex flex-col items-center gap-3">
-            <img src={fileUrl(lightbox.id, true)} alt={lightbox.filename} className="max-h-[70vh] max-w-full rounded-lg object-contain" />
+            <ZoomableImage src={fileUrl(lightbox.id, true)} alt={lightbox.filename} className="h-[70vh] w-full rounded-lg" imgClassName="rounded-lg" />
             <a href={fileUrl(lightbox.id)} download={lightbox.filename} className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
-              <Download className="h-4 w-4" /> Herunterladen ({formatSize(lightbox.size)})
+              <Download className="h-4 w-4" /> Herunterladen{lightbox.size > 0 && ` (${formatSize(lightbox.size)})`}
             </a>
           </div>
         </Modal>

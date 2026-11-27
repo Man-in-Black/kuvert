@@ -11,6 +11,7 @@ import type { EmailAddress, MessageDetail } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
 import { escapeHtml, formatAddress, formatSize } from '@/lib/utils';
 import { Modal } from '@/components/ui';
+import { ZoomableImage } from '@/components/ZoomableImage';
 import { buildMailSrcDoc, hasRemoteContent } from '../sanitize';
 import { MailFrame } from './MailFrame';
 
@@ -74,9 +75,7 @@ function PreviewBody({ file, kind }: { file: PreviewFile; kind: Kind | null }) {
   switch (kind) {
     case 'image':
       return (
-        <div className="flex h-full items-center justify-center">
-          <img src={file.inlineUrl} alt={file.filename} className="max-h-[80vh] max-w-full object-contain" />
-        </div>
+        <ZoomableImage src={file.inlineUrl} alt={file.filename} className="h-[75vh] w-full" />
       );
     case 'pdf':
       return (

@@ -133,6 +133,57 @@ const isAfter = (a: string, b: string) => (Date.parse(a) || 0) > (Date.parse(b) 
 
 const typeOf = (name: string) => IMAGE_TYPES[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream';
 
+/**
+ * GIF-Anbieter der Teams-GIF-Auswahl. Diese Bilder liegen nicht bei Microsoft, sondern
+ * werden per <img src="https://media.giphy.com/…"> eingebunden. Kuvert lädt sie über den
+ * Server (kein Referrer/IP des Benutzers an den Anbieter) – nur von diesen Hosts, weil die
+ * Datei-ID nicht signiert ist.
+ */
+const GIF_HOSTS = /^(?:[a-z0-9-]+\.)*(?:giphy\.com|tenor\.com|tenor\.googleapis\.com)$/i;
+const MAX_GIF_BYTES = 25 * 1024 * 1024;
+
+function isGifUrl(src: string): boolean {
+  try {
+    const u = new URL(src);
+    return u.protocol === 'https:' && GIF_HOSTS.test(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Bildtyp anhand der ersten Bytes (Graph liefert hostedContents teils als octet-stream) */
+function sniffImage(data: Buffer): string | null {
+  if (data.length >= 6 && data.subarray(0, 6).toString('latin1').startsWith('GIF8')) return 'image/gif';
+  if (data.length >= 8 && data[0] === 0x89 && data.subarray(1, 4).toString('latin1') === 'PNG') return 'image/png';
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return 'image/jpeg';
+  if (data.length >= 12 && data.subarray(0, 4).toString('latin1') === 'RIFF' && data.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  return null;
+}
+
+/** Lädt ein GIF von einem erlaubten Anbieter; Weiterleitungen nur zu erlaubten Hosts */
+async function fetchGif(src: string): Promise<{ data: Buffer; contentType: string }> {
+  let url = src;
+  for (let hop = 0; hop < 4; hop++) {
+    if (!isGifUrl(url)) break;
+    const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(30_000), headers: { Accept: 'image/*' } });
+    if (res.status >= 300 && res.status < 400) {
+      const next = res.headers.get('location');
+      if (!next) break;
+      url = new URL(next, url).toString();
+      continue;
+    }
+    if (!res.ok) throw new HttpError(404, 'GIF nicht (mehr) verfügbar');
+    if (Number(res.headers.get('content-length') ?? 0) > MAX_GIF_BYTES) throw new HttpError(413, 'GIF zu groß');
+    const data = Buffer.from(await res.arrayBuffer());
+    if (data.length > MAX_GIF_BYTES) throw new HttpError(413, 'GIF zu groß');
+    const ct = (res.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+    const type = sniffImage(data) ?? (/^image\//.test(ct) && !ct.includes('svg') ? ct : null);
+    if (!type) throw new HttpError(404, 'GIF nicht (mehr) verfügbar');
+    return { data, contentType: type };
+  }
+  throw new NotFoundError('Datei');
+}
+
 /* ───────────────────────────── HTML ⇄ Markdown ───────────────────────────── */
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
@@ -417,12 +468,17 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
     let replyTo: ChatMessage['replyTo'] = null;
     let extra = '';
     if (!deleted && !system) {
-      // Eingebettete Bilder (hostedContents)
+      // Eingebettete Bilder (hostedContents) und GIFs aus der Teams-GIF-Auswahl (Giphy)
       for (const tag of html.match(/<img\b[^>]*>/gi) ?? []) {
         const src = decodeEntities(attr(tag, 'src') ?? '');
-        if (!/^https:\/\/graph\.microsoft\.com\/[^\s]*hostedContents\//i.test(src)) continue;
-        const n = attachments.length + 1;
-        attachments.push({ id: this.fileId(JSON.stringify({ k: 'h', u: src, n: `Bild ${n}.png`, m: 'image/png' })), filename: `Bild ${n}.png`, contentType: 'image/png', size: 0 });
+        if (/^https:\/\/graph\.microsoft\.com\/[^\s]*hostedContents\//i.test(src)) {
+          const n = attachments.length + 1;
+          attachments.push({ id: this.fileId(JSON.stringify({ k: 'h', u: src, n: `Bild ${n}.png`, m: 'image/png' })), filename: `Bild ${n}.png`, contentType: 'image/png', size: 0 });
+        } else if (isGifUrl(src)) {
+          const alt = decodeEntities(attr(tag, 'alt') ?? '').replace(/[\\/:*?"<>|\s]+/g, ' ').trim().slice(0, 80);
+          const name = `${alt || 'GIF'}.gif`;
+          attachments.push({ id: this.fileId(JSON.stringify({ k: 'g', u: src, n: name, m: 'image/gif' })), filename: name, contentType: 'image/gif', size: 0 });
+        }
       }
       for (const a of m.attachments ?? []) {
         const ct = a.contentType ?? '';
@@ -833,17 +889,24 @@ export class TeamsBridge extends BridgeBase implements ChatBridge {
   }
 
   async file(ref: string): Promise<BinaryFile> {
-    let f: { k: 'h' | 'r'; u: string; n: string; m: string };
+    let f: { k: 'h' | 'r' | 'g'; u: string; n: string; m: string };
     try {
       f = JSON.parse(ref);
     } catch {
       throw new NotFoundError('Datei');
     }
+    if (f.k === 'g') {
+      // Ohne Graph-Token, nur von den erlaubten GIF-Anbietern
+      const { data, contentType } = await fetchGif(f.u);
+      return { filename: f.n, contentType, data };
+    }
     if (f.k === 'h') {
       // Nur Graph-Adressen abrufen (das Token darf nirgendwo anders hin)
       if (!/^https:\/\/graph\.microsoft\.com\/(v1\.0|beta)\//i.test(f.u)) throw new NotFoundError('Datei');
       const { data, contentType } = await this.call((g) => g.buffer(f.u));
-      return { filename: f.n, contentType: contentType.split(';')[0] || f.m, data };
+      const ct = contentType.split(';')[0]!.trim().toLowerCase();
+      // Eingefügte GIFs kommen ebenfalls als hostedContents – echten Typ erkennen, damit sie animiert bleiben
+      return { filename: f.n, contentType: sniffImage(data) ?? (/^image\//.test(ct) ? ct : f.m), data };
     }
     const shareId = `u!${Buffer.from(f.u, 'utf8').toString('base64url')}`;
     const { data, contentType } = await this.call((g) => g.buffer(`/shares/${shareId}/driveItem/content`, { timeoutMs: 120_000 })).catch((err) => {

@@ -550,7 +550,8 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
     } catch {
       throw new NotFoundError('Datei');
     }
-    if (inline && f.i && /^image\//.test(f.m) && !f.m.includes('svg')) {
+    // Nextcloud-Vorschauen sind Standbilder → GIFs im Original laden, damit sie animiert bleiben
+    if (inline && f.i && /^image\//.test(f.m) && !f.m.includes('svg') && f.m !== 'image/gif') {
       const res = await this.raw(`${this.base}/index.php/core/preview`, { query: { fileId: f.i, x: 1600, y: 1600, a: 1 } });
       if (res.ok) return { filename: f.n, contentType: res.headers.get('content-type') || 'image/jpeg', data: Buffer.from(await res.arrayBuffer()) };
     }
