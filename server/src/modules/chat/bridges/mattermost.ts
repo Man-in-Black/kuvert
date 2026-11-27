@@ -33,6 +33,7 @@ import {
   type ChatBridge,
   type ConnectionRecord,
 } from './common.js';
+import { extractMarkdownImages, keepMarkdownGifs } from './gif.js';
 
 /* ───────────────────────────── Typen der API ───────────────────────────── */
 
@@ -575,6 +576,8 @@ export class MattermostBridge extends BridgeBase implements ChatBridge {
     const webhook = isTrue(p.props?.from_webhook);
     const bot = webhook || isTrue(p.props?.from_bot) || !!this.users.get(p.user_id)?.is_bot;
     const cards = deleted || system || call ? [] : this.cards(p);
+    // GIF-Auswahl von Mattermost fügt ![Titel](https://media.giphy.com/…) ein → als Bild-Anhang
+    const content = deleted || system || call ? { body: '', attachments: [] } : extractMarkdownImages(replaceShortcodes(p.message), (ref) => this.fileId(ref));
     const username = this.conn.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const mention = !system && !call && new RegExp(`@(${username}|all|channel|here)(?![\\w.-])`, 'i').test(p.message);
     return {
@@ -592,14 +595,17 @@ export class MattermostBridge extends BridgeBase implements ChatBridge {
             ? call.endedAt
               ? '📞 Anruf beendet'
               : '📞 Anruf läuft'
-            : replaceShortcodes(p.message),
+            : content.body,
       createdAt: msToIso(p.create_at),
       editedAt: p.edit_at ? msToIso(p.edit_at) : null,
       deleted,
       replyTo,
       attachments: deleted
         ? []
-        : (p.metadata?.files ?? []).map((f) => ({ id: this.fileId(f.id), filename: f.name, contentType: f.mime_type || 'application/octet-stream', size: f.size })),
+        : [
+            ...(p.metadata?.files ?? []).map((f) => ({ id: this.fileId(f.id), filename: f.name, contentType: f.mime_type || 'application/octet-stream', size: f.size })),
+            ...content.attachments,
+          ],
       reactions: deleted ? [] : reactions,
       senderName: override ?? (this.users.has(p.user_id) ? mmDisplayName(this.users.get(p.user_id)) : null),
       mention: mention || undefined,
@@ -834,7 +840,9 @@ export class MattermostBridge extends BridgeBase implements ChatBridge {
   }
 
   async edit(_remoteId: string, messageId: string, body: string): Promise<ChatMessage> {
-    const post = await this.api<MmPost>(`/posts/${encodeURIComponent(messageId)}/patch`, { method: 'PUT', body: { message: body } });
+    const before = this.posts.get(messageId) ?? (await this.getPost(messageId));
+    const message = keepMarkdownGifs(before.message, body);
+    const post = await this.api<MmPost>(`/posts/${encodeURIComponent(messageId)}/patch`, { method: 'PUT', body: { message } });
     this.rememberPost(post);
     return this.toMessage(post);
   }

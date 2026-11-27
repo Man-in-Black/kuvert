@@ -11,6 +11,7 @@ import { AppError, AuthError, BadRequestError, HttpError, NotFoundError } from '
 import { withQuery } from '../../../core/http.js';
 import { nextcloudUserInfo } from '../../dav/storage.js';
 import { BridgeBase, msToIso, type BinaryFile, type BridgeHost, type ChatBridge, type ConnectionRecord } from './common.js';
+import { extractMarkdownImages, keepMarkdownGifs } from './gif.js';
 
 /* ───────────────────────────── Typen der API ───────────────────────────── */
 
@@ -255,6 +256,8 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
     const file = this.params(m).file;
     const reactions = Array.isArray(m.reactions) || !m.reactions ? {} : m.reactions;
     const parent = m.parent && !Array.isArray(m.parent) ? m.parent : null;
+    // GIFs als Markdown-Bild ![Titel](https://media.giphy.com/…) → als Bild-Anhang
+    const content = system || deleted ? { body: '', attachments: [] } : extractMarkdownImages(this.renderText(m, false), (ref) => this.fileId(ref));
     const mention = Object.values(this.params(m)).some(
       (p) => (p.type === 'user' && p.id === this.conn.remoteUserId) || p.type === 'call' || p.type === 'user-group',
     );
@@ -264,7 +267,7 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
       conversationId: this.convId(m.token),
       senderId: system ? null : this.actorUid(m),
       kind: system ? 'system' : 'text',
-      body: system ? JSON.stringify({ action: 'text', actorId: this.actorUid(m) ?? '', text: this.renderText(m, true) }) : deleted ? '' : this.renderText(m, false),
+      body: system ? JSON.stringify({ action: 'text', actorId: this.actorUid(m) ?? '', text: this.renderText(m, true) }) : content.body,
       createdAt: msToIso(m.timestamp * 1000),
       editedAt: m.lastEditTimestamp ? msToIso(m.lastEditTimestamp * 1000) : null,
       deleted,
@@ -277,8 +280,8 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
             hasAttachments: !!this.params(parent).file,
           }
         : null,
-      attachments:
-        !deleted && file?.type === 'file'
+      attachments: [
+        ...(!deleted && file?.type === 'file'
           ? [
               {
                 id: this.fileId(JSON.stringify({ p: file.path ?? file.name ?? '', i: file.id ?? '', n: file.name ?? 'Datei', m: file.mimetype ?? '' })),
@@ -287,7 +290,9 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
                 size: Number(file.size) || 0,
               },
             ]
-          : [],
+          : []),
+        ...content.attachments,
+      ],
       reactions: deleted
         ? []
         : Object.entries(reactions).map(([emoji, count]) => ({ emoji, userIds: m.reactionsSelf?.includes(emoji) ? [this.me] : [], count })),
@@ -476,7 +481,9 @@ export class TalkBridge extends BridgeBase implements ChatBridge {
 
   async edit(token: string, messageId: string, body: string): Promise<ChatMessage> {
     if (!this.capabilities.edit) throw new BadRequestError('Diese Nextcloud-Version unterstützt kein Bearbeiten');
-    return this.updated(await this.ocs<TalkMessage>(`/apps/spreed/api/v1/chat/${encodeURIComponent(token)}/${encodeURIComponent(messageId)}`, { method: 'PUT', body: { message: body } }));
+    const before = this.cache.get(`${token}/${messageId}`);
+    const message = before ? keepMarkdownGifs(before.message, body) : body;
+    return this.updated(await this.ocs<TalkMessage>(`/apps/spreed/api/v1/chat/${encodeURIComponent(token)}/${encodeURIComponent(messageId)}`, { method: 'PUT', body: { message } }));
   }
 
   async delete(token: string, messageId: string): Promise<ChatMessage> {

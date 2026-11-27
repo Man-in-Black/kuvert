@@ -1,6 +1,8 @@
 /**
  * Chat-Markdown (bewusst kleiner Umfang): **fett**, _kursiv_/*kursiv*, ~~durch~~,
  * `Code`, ```Codeblock```, > Zitat, - Liste, 1. Liste, [Text](https://…) und nackte URLs.
+ * Markdown-Bilder ![Titel](https://…) aus verbundenen Diensten erscheinen als Link (GIFs macht
+ * der Server zu Bild-Anhängen).
  *
  * Gespeichert wird Markdown (lesbar in Suche, Vorschau, Push, Webhooks, API).
  * - parseMarkdown → AST für die Anzeige (format.tsx) und den Editor (markdownToHtml)
@@ -27,7 +29,7 @@ export type Block =
   | { t: 'ol'; start: number; items: Line[][] };
 
 const INLINE =
-  /(`[^`\n]+`)|(\[[^\]\n]+\]\(https?:\/\/[^\s)]+\))|(\*\*[^\n]+?\*\*)|(~~[^\n]+?~~)|((?<![\w*])\*[^*\s](?:[^*\n]*[^*\s])?\*(?![\w*]))|((?<![\w_])_[^_\s](?:[^_\n]*[^_\s])?_(?![\w_]))|(https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"])|(www\.[^\s<>]+[^\s<>.,;:!?)\]'"])/g;
+  /(`[^`\n]+`)|(!?\[[^\]\n]*\]\(https?:\/\/[^\s)]+\))|(\*\*[^\n]+?\*\*)|(~~[^\n]+?~~)|((?<![\w*])\*[^*\s](?:[^*\n]*[^*\s])?\*(?![\w*]))|((?<![\w_])_[^_\s](?:[^_\n]*[^_\s])?_(?![\w_]))|(https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"])|(www\.[^\s<>]+[^\s<>.,;:!?)\]'"])/g;
 
 export function parseInline(text: string): Inline[] {
   const out: Inline[] = [];
@@ -39,7 +41,9 @@ export function parseInline(text: string): Inline[] {
     if (m[1]) out.push({ t: 'code', v: s.slice(1, -1) });
     else if (m[2]) {
       const mid = s.indexOf('](');
-      out.push({ t: 'link', href: s.slice(mid + 2, -1), c: parseInline(s.slice(1, mid)) });
+      const href = s.slice(mid + 2, -1);
+      const label = s.slice(s.startsWith('!') ? 2 : 1, mid);
+      out.push({ t: 'link', href, c: label.trim() ? parseInline(label) : [{ t: 'text', v: href }] });
     } else if (m[3]) out.push({ t: 'bold', c: parseInline(s.slice(2, -2)) });
     else if (m[4]) out.push({ t: 'strike', c: parseInline(s.slice(2, -2)) });
     else if (m[5] || m[6]) out.push({ t: 'italic', c: parseInline(s.slice(1, -1)) });

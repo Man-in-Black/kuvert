@@ -116,7 +116,7 @@ export function previewOf(body: string, attachments = 0): string {
     .replace(/```[\s\S]*?```/g, '[Code]')
     .replace(/^>\s?/gm, '')
     .replace(/^\s{0,3}(?:[-*•]|\d{1,9}[.)])\s+/gm, '')
-    .replace(/\[([^\]\n]+)\]\(https?:\/\/[^\s)]+\)/g, '$1')
+    .replace(/!?\[([^\]\n]+)\]\(https?:\/\/[^\s)]+\)/g, '$1')
     .replace(/(\*\*|~~|`)/g, '')
     // _kursiv_ / *kursiv* → kursiv (Unterstriche in Wörtern wie snake_case bleiben)
     .replace(/(^|[^\w*])[_*](?=\S)([^_*\n]*?\S)[_*](?![\w*])/g, '$1$2')

@@ -19,6 +19,7 @@ import { users } from '../../core/users.js';
 import { parse, sendFile } from '../../routes/util.js';
 import { pushStore } from '../notifications/push.js';
 import { bridgeMigrations, extPrefs, isExternalId, parseExtId, previewText as extPreview } from './bridges/common.js';
+import { gifFile } from './bridges/gif.js';
 import { BridgeManager } from './bridges/manager.js';
 import { MAX_ATTACHMENTS, MAX_BODY, PAGE_SIZE, chatStore, migrations } from './store.js';
 
@@ -511,7 +512,9 @@ export default defineModule({
       const inline = req.query.inline === '1';
       if (isExternalId(req.params.id)) {
         const bridge = bridges().forId(req.user.id, req.params.id);
-        return sendFile(reply, await bridge.file(parseExtId(req.params.id, 1).parts[0]!, inline), inline);
+        const ref = parseExtId(req.params.id, 1).parts[0]!;
+        // GIFs aus Giphy/Tenor (Markdown-Bilder in Mattermost/Talk) – gleich für alle Dienste
+        return sendFile(reply, (await gifFile(ref)) ?? (await bridge.file(ref, inline)), inline);
       }
       const file = chatStore.file(req.params.id, req.user.id);
       return sendFile(reply, file, inline);
