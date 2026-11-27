@@ -37,8 +37,36 @@ function excalidrawFonts(): Plugin {
   };
 }
 
+/**
+ * MediaPipe (Hintergrund-Weichzeichner und virtuelle Hintergründe im Anruf) selbst ausliefern statt
+ * von jsDelivr: WASM-Dateien aus node_modules nach dist/mediapipe/wasm. Das Segmentierungsmodell
+ * (selfie_segmenter.tflite, Apache-2.0) liegt in public/mediapipe.
+ */
+function mediapipeWasm(): Plugin {
+  const pkg = path.dirname(fileURLToPath(import.meta.resolve('@mediapipe/tasks-vision')));
+  const wasm = path.join(pkg, 'wasm');
+  let outDir = '';
+  return {
+    name: 'kuvert-mediapipe-wasm',
+    configResolved(c) {
+      outDir = path.resolve(c.root, c.build.outDir);
+    },
+    configureServer(server) {
+      server.middlewares.use('/mediapipe/wasm', (req, res, next) => {
+        const file = path.join(wasm, decodeURIComponent((req.url ?? '').split('?')[0]!));
+        if (!file.startsWith(wasm) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return next();
+        res.setHeader('Content-Type', file.endsWith('.wasm') ? 'application/wasm' : 'text/javascript');
+        fs.createReadStream(file).pipe(res);
+      });
+    },
+    writeBundle() {
+      fs.cpSync(wasm, path.join(outDir, 'mediapipe', 'wasm'), { recursive: true });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), excalidrawFonts()],
+  plugins: [react(), tailwindcss(), excalidrawFonts(), mediapipeWasm()],
   resolve: {
     alias: {
       '@kuvert/shared': r('../shared/src/index.ts'),

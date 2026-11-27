@@ -98,6 +98,18 @@ export function leaveCall() {
   void api(c.leavePath, { method: 'POST' }).catch(() => undefined);
 }
 
+/** Anruf für alle beenden (nur wer ihn gestartet hat) */
+export async function endCallForAll(): Promise<void> {
+  const c = state;
+  if (!c) return;
+  try {
+    await api(`/meet/c/${encodeURIComponent(c.callId)}/end`, { method: 'POST' });
+    if (state?.callId === c.callId) set(null);
+  } catch (err) {
+    toast.error(errorMessage(err));
+  }
+}
+
 /** Klingeln ablehnen */
 export function declineCall(conversationId: string) {
   void api(`/meet/calls/${encodeURIComponent(conversationId)}/decline`, { method: 'POST' }).catch(() => undefined);

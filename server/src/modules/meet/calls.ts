@@ -289,7 +289,7 @@ function startMeetingCall(m: Meeting, userId: string): ActiveCall {
   return c;
 }
 
-async function end(c: ActiveCall, reason: 'empty' | 'no_answer' | 'declined' | 'shutdown') {
+async function end(c: ActiveCall, reason: 'empty' | 'no_answer' | 'declined' | 'ended' | 'shutdown') {
   if (calls.get(c.key) !== c) return;
   calls.delete(c.key);
   byId.delete(c.id);
@@ -468,6 +468,14 @@ export interface CallJoin {
   room: string;
   conversationId: string | null;
   title: string;
+  /** Darf den Anruf für alle beenden (wer ihn gestartet bzw. das Meeting angelegt hat) */
+  host: boolean;
+}
+
+/** Gastgeber: wer den Anruf gestartet hat bzw. bei Meetings auch, wer das Meeting angelegt hat */
+function isHost(c: ActiveCall, userId: string): boolean {
+  if (c.ownerId === userId) return true;
+  return !!c.meetingId && meetings.get(c.meetingId)?.ownerId === userId;
 }
 
 const joinInfo = (c: ActiveCall, userId: string): CallJoin => ({
@@ -475,6 +483,7 @@ const joinInfo = (c: ActiveCall, userId: string): CallJoin => ({
   room: c.room,
   conversationId: c.conversationId,
   title: c.meetingId ? c.title : c.conversationId && chatStore.member(c.conversationId, userId) ? '' : callTitle(c, userId),
+  host: isHost(c, userId),
 });
 
 export const meetCalls = {
@@ -533,6 +542,14 @@ export const meetCalls = {
     if (!c.participants.delete(userId)) return;
     if (!c.participants.size) void end(c, 'empty');
     else broadcast(c);
+  },
+
+  /** Anruf für alle beenden (nur Gastgeber) – auch Gäste fliegen hinaus, der LiveKit-Raum wird geschlossen */
+  async endForAll(callId: string, userId: string) {
+    const c = requireCall(callId);
+    if (!isHost(c, userId)) throw new AppError(403, 'not_host', 'Nur wer den Anruf gestartet hat, kann ihn für alle beenden');
+    ctxRef?.log.info({ callId: c.id, by: userId }, 'Anruf für alle beendet');
+    await end(c, 'ended');
   },
 
   /** Austritt über die Unterhaltung (ältere Clients) */

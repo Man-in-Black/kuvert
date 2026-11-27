@@ -17,6 +17,8 @@ export interface MeetJoinResult {
   guest: boolean;
   /** Darf Gäste und weitere Personen einladen und Gäste zulassen (Kuvert-Benutzer im Anruf) */
   canInvite: boolean;
+  /** Darf den Anruf für alle beenden (wer ihn gestartet bzw. das Meeting angelegt hat) */
+  canEndForAll: boolean;
   /** Gäste sind erlaubt (Admin-Einstellung) */
   guestsAllowed: boolean;
   /** Bildschirmfreigabe erlaubt (Admin-Einstellung) */

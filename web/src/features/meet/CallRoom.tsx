@@ -4,7 +4,7 @@
  * Lässt sich verkleinern – der Anruf läuft dann in einer kleinen Karte unten rechts weiter,
  * während man Kuvert normal benutzt.
  */
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   CarouselLayout,
   ConnectionStateToast,
@@ -28,7 +28,9 @@ import '@livekit/components-styles';
 import { toast } from 'sonner';
 import { Maximize2, Mic, MicOff, Minimize2, MonitorUp, MonitorX, PenLine, PhoneOff, UserPlus, Users, Video, VideoOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { callState, leaveCall, type ActiveCall } from './store';
+import { callState, endCallForAll, leaveCall, type ActiveCall } from './store';
+import { BackgroundMenu } from './BackgroundMenu';
+import { ensureEffect, savedEffect } from './effects';
 import { WhiteboardSync } from './whiteboard-sync';
 import { lobbyWaiting, PeoplePanel, useMeetCallState } from './People';
 
@@ -118,7 +120,10 @@ export default function CallRoom({ call, title }: { call: ActiveCall; title: str
       data-lk-theme="default"
       onDisconnected={(reason) => {
         if (reason === DisconnectReason.PARTICIPANT_REMOVED) toast('Du wurdest aus dem Anruf entfernt', { id: 'meet-removed' });
-        else if (reason === DisconnectReason.ROOM_DELETED && call.guest) toast('Der Anruf wurde beendet', { id: 'meet-ended' });
+        // Unterhaltungen meldet der Chat („Anruf beendet“); Gäste, Meetings und Dazugeholte nicht
+        else if (reason === DisconnectReason.ROOM_DELETED && (call.guest || !call.conversationId || call.title)) {
+          toast('Der Anruf wurde beendet', { id: `meet-ended-${call.callId}` });
+        }
         else if (reason !== undefined && reason !== DisconnectReason.CLIENT_INITIATED && reason !== DisconnectReason.ROOM_DELETED) {
           toast.error('Verbindung zum Anruf verloren');
         }
@@ -202,6 +207,25 @@ function CallContent({ call, title }: { call: ActiveCall; title: string }) {
     [sync],
   );
   useEffect(() => sync.onScene(() => setWbActivity(true)), [sync]);
+
+  // Gespeicherten Kamera-Effekt anwenden, sobald die Kamera läuft (auch nach Aus-/Einschalten)
+  useEffect(() => {
+    const apply = (source?: Track.Source) => {
+      if (source !== Track.Source.Camera || savedEffect() === 'none') return;
+      const track = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+      if (!track || track.getProcessor()) return;
+      ensureEffect(room).catch((err: unknown) =>
+        toast.error('Hintergrund lässt sich nicht anwenden', { id: 'meet-effect', description: err instanceof Error ? err.message : String(err) }),
+      );
+    };
+    const onPublished = (pub: { source: Track.Source }) => apply(pub.source);
+    const onUnmuted = (pub: { source: Track.Source }, participant: { isLocal: boolean }) => participant.isLocal && apply(pub.source);
+    room.on(RoomEvent.LocalTrackPublished, onPublished).on(RoomEvent.TrackUnmuted, onUnmuted);
+    apply(Track.Source.Camera);
+    return () => {
+      room.off(RoomEvent.LocalTrackPublished, onPublished).off(RoomEvent.TrackUnmuted, onUnmuted);
+    };
+  }, [room]);
 
   const others = participants.filter((p) => p.identity !== localParticipant.identity).length;
   useEffect(() => {
@@ -332,6 +356,7 @@ function CallContent({ call, title }: { call: ActiveCall; title: string }) {
               <CameraIcon />
             </TrackToggle>
             <MediaDeviceMenu kind="videoinput" className="kuvert-call-device" title="Kamera wählen" />
+            <BackgroundMenu />
           </>
         )}
         {allowScreen && !!navigator.mediaDevices?.getDisplayMedia && (
@@ -371,9 +396,7 @@ function CallContent({ call, title }: { call: ActiveCall; title: string }) {
             <UserPlus className="h-5 w-5" />
           </RoundButton>
         )}
-        <RoundButton danger label="Auflegen" onClick={leaveCall} className="ml-2 w-16">
-          <PhoneOff className="h-5 w-5" />
-        </RoundButton>
+        <HangUp canEndForAll={call.canEndForAll} />
         <StartAudio label="Ton aktivieren" className="ml-2 rounded-full bg-warning px-4 py-2 text-sm font-medium text-black" />
       </footer>
     </div>
@@ -408,6 +431,62 @@ function CameraIcon() {
 function ScreenIcon() {
   const { isScreenShareEnabled } = useLocalParticipant();
   return isScreenShareEnabled ? <MonitorX className="h-5 w-5" /> : <MonitorUp className="h-5 w-5" />;
+}
+
+/** Auflegen; wer den Anruf gestartet hat, kann ihn auch für alle beenden */
+function HangUp({ canEndForAll }: { canEndForAll: boolean }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('pointerdown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  if (!canEndForAll) {
+    return (
+      <RoundButton danger label="Auflegen" onClick={leaveCall} className="ml-2 w-16">
+        <PhoneOff className="h-5 w-5" />
+      </RoundButton>
+    );
+  }
+  return (
+    <div ref={box} className="relative ml-2">
+      <RoundButton danger label="Auflegen …" onClick={() => setOpen((v) => !v)} className="w-16">
+        <PhoneOff className="h-5 w-5" />
+      </RoundButton>
+      {open && (
+        <div className="absolute bottom-full right-0 z-30 mb-3 w-56 overflow-hidden rounded-xl bg-[#181b21] text-sm shadow-2xl ring-1 ring-white/10">
+          <button type="button" onClick={leaveCall} className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-white/10">
+            <PhoneOff className="h-4 w-4 shrink-0" />
+            <span>
+              Anruf verlassen
+              <span className="block text-xs text-white/50">Die anderen können weitersprechen</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void endCallForAll()}
+            className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2.5 text-left text-danger hover:bg-danger/15"
+          >
+            <Users className="h-4 w-4 shrink-0" />
+            <span>
+              Für alle beenden
+              <span className="block text-xs text-white/50">Alle, auch Gäste, werden getrennt</span>
+            </span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function RoundButton({

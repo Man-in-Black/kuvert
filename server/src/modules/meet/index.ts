@@ -85,6 +85,7 @@ function joinResult(
     token,
     guest: who.guest,
     canInvite: !who.guest,
+    canEndForAll: !who.guest && j.host,
     guestsAllowed: cfg.guests,
     allowScreenShare: cfg.screenShare,
     allowWhiteboard: cfg.whiteboard,
@@ -178,6 +179,12 @@ export default defineModule({
 
     app.post<CallParams>('/c/:callId/leave', async (req) => {
       meetCalls.leave(req.params.callId, req.user.id);
+      return { ok: true };
+    });
+
+    /** Anruf für alle beenden (wer ihn gestartet hat bzw. das Meeting angelegt hat) */
+    app.post<CallParams>('/c/:callId/end', async (req) => {
+      await meetCalls.endForAll(req.params.callId, req.user.id);
       return { ok: true };
     });
 
@@ -285,7 +292,7 @@ export default defineModule({
         const leavePath = `/meet/lobby/${req.params.requestId}/leave?secret=${encodeURIComponent(q.secret)}`;
         return {
           status: 'admitted',
-          join: joinResult(req, { callId: s.callId, room: s.room, conversationId: null, title: s.title }, {
+          join: joinResult(req, { callId: s.callId, room: s.room, conversationId: null, title: s.title, host: false }, {
             identity: s.identity,
             name: `${s.name} (Gast)`,
             guest: true,

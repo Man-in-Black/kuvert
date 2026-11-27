@@ -1,0 +1,4 @@
+selfie_segmenter.tflite – MediaPipe Selfie Segmentation model
+Source: https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite
+Copyright Google LLC. Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0
+Used by Kuvert for background blur and virtual backgrounds in calls (via @livekit/track-processors / @mediapipe/tasks-vision).
