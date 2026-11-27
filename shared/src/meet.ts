@@ -89,6 +89,8 @@ export interface MeetMeeting {
   /** Vollständiger Link zum Beitreten (/join/…) */
   url: string;
   createdAt: string;
+  /** Spontanes Meeting: verfällt zu diesem Zeitpunkt (ISO); null = bleibt (z. B. Kalendertermin) */
+  expiresAt: string | null;
 }
 
 /** Datenkanal-Themen im Anruf */

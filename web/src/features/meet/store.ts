@@ -5,7 +5,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
-import type { MeetJoinResult } from '@kuvert/shared';
+import type { MeetJoinResult, MeetMeeting } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
 
 export interface ActiveCall extends MeetJoinResult {
@@ -88,6 +88,29 @@ export function joinCallById(callId: string, opts: { video?: boolean } = {}): Pr
 /** Über einen Einladungs- bzw. Meeting-Link beitreten (angemeldet) */
 export function joinByLink(token: string, opts: { video?: boolean } = {}): Promise<boolean> {
   return join(`/meet/links/${encodeURIComponent(token)}/join`, opts, () => false);
+}
+
+/**
+ * Spontanmeeting: Meeting mit eigenem Link anlegen (ohne Termin, verfällt nach einigen Tagen),
+ * sofort beitreten und den Einladen-Bereich öffnen – dort Gast-Link kopieren oder Kollegen dazuholen.
+ */
+export async function startAdhocMeeting(opts: { video?: boolean } = {}): Promise<void> {
+  if (state) {
+    toast.error('Du bist bereits in einem Anruf – bitte zuerst auflegen.');
+    return;
+  }
+  let meeting: MeetMeeting;
+  try {
+    meeting = await api<MeetMeeting>('/meet/meetings', { method: 'POST', body: { adhoc: true } });
+  } catch (err) {
+    toast.error(errorMessage(err));
+    return;
+  }
+  const token = meeting.url.split('/join/')[1] ?? '';
+  if (await joinByLink(token, opts)) {
+    callState.patch({ people: true });
+    toast.success('Spontanmeeting gestartet', { description: 'Rechts unter „Personen“ Kollegen dazuholen oder den Gast-Link kopieren.' });
+  }
 }
 
 /** Auflegen (lokal sofort, Server im Hintergrund) */

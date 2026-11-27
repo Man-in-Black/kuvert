@@ -4,10 +4,11 @@
  * Die Admin-Seite ist auch ohne aktives Feature erreichbar, sonst ließe sich die Anbindung nie einrichten.
  */
 import { lazy, Suspense } from 'react';
-import { Video } from 'lucide-react';
+import { Video, Zap } from 'lucide-react';
 import type { WebModule } from '@/modules/types';
 import { Skeleton } from '@/components/ui';
 import { CallHost } from './CallHost';
+import { startAdhocMeeting } from './store';
 
 const AdminLazy = lazy(() => import('./MeetAdmin').then((m) => ({ default: m.MeetAdminSection })));
 const JoinLazy = lazy(() => import('./JoinPages').then((m) => ({ default: m.MemberJoinPage })));
@@ -32,6 +33,17 @@ const mod: WebModule = {
   id: 'meet',
   feature: 'meet',
   services: [CallHost],
+  // Spontanmeeting ohne Termin: Seitenleiste, Befehlspalette, mobil im „Mehr“-Menü
+  actions: [
+    {
+      id: 'meet-adhoc',
+      label: 'Spontanmeeting',
+      icon: Zap,
+      order: 40,
+      keywords: 'meeting anruf video konferenz besprechung call jetzt gast link',
+      run: () => void startAdhocMeeting({ video: true }),
+    },
+  ],
   routes: [
     {
       path: 'join/:token',

@@ -347,6 +347,9 @@ Direktanrufe enden nach 45 s ohne Antwort; wer nicht dabei war, sieht „Verpass
 - **Kalender:** Im Termin-Editor legt „Kuvert-Anruf hinzufügen“ ein Meeting mit festem Link an und trägt ihn in
   Beschreibung (und Ort) ein – so bekommen ihn auch externe Eingeladene. Angemeldete treten über den Link direkt bei,
   Gäste klopfen an und warten, bis jemand aus Kuvert im Meeting ist und sie hereinlässt.
+- **Spontanmeeting** (im Chat über „Neu“ bzw. als Aktion in Seitenleiste und Befehlspalette): legt ohne Termin ein
+  Meeting mit eigenem Link an, tritt sofort bei und öffnet „Personen“ zum Dazuholen bzw. Kopieren des Gast-Links.
+  Spontane Meetings verfallen nach 7 Tagen von selbst.
 - Gäste lassen sich unter *Admin → Anrufe* abschalten. Die Links bauen auf `PUBLIC_URL` auf – die Variable muss die
   externe Adresse enthalten.
 

@@ -342,8 +342,20 @@ async function end(c: ActiveCall, reason: 'empty' | 'no_answer' | 'declined' | '
 }
 
 /** Mit LiveKit abgleichen: wer ist wirklich (noch) im Raum? */
+/** Abgelaufene spontane Meetings höchstens alle 10 Minuten aufräumen */
+let lastCleanup = 0;
+
 async function poll() {
   const now = Date.now();
+  if (now - lastCleanup > 10 * 60_000) {
+    lastCleanup = now;
+    try {
+      const n = meetings.deleteExpired((id) => calls.has(meetingKey(id)));
+      if (n) ctxRef?.log.info({ count: n }, 'Abgelaufene spontane Meetings entfernt');
+    } catch (err) {
+      ctxRef?.log.warn({ err }, 'Aufräumen der Meetings fehlgeschlagen');
+    }
+  }
   // Verwaiste Anklopf-Anfragen (Seite geschlossen) und erledigte aufräumen
   const touched = new Set<string>();
   for (const [id, r] of lobby) {

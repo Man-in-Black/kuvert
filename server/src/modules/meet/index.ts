@@ -236,11 +236,14 @@ export default defineModule({
 
     app.get('/meetings', async (req): Promise<MeetMeeting[]> => meetings.listForOwner(req.user.id).map(toPublicMeeting));
 
+    /** Meeting mit festem Link anlegen – für einen Kalendertermin oder spontan (adhoc, verfällt nach einigen Tagen) */
     app.post('/meetings', async (req): Promise<MeetMeeting> => {
       ensureAvailable();
-      const b = parse(z.object({ title: z.string().trim().max(200).default('') }), req.body ?? {});
-      const m = meetings.create(req.user.id, b.title || 'Kuvert-Anruf');
-      audit.log('meet.meeting_created', { req, details: { meetingId: m.id, title: m.title } });
+      const b = parse(z.object({ title: z.string().trim().max(200).default(''), adhoc: z.boolean().default(false) }), req.body ?? {});
+      const name = users.get(req.user.id)?.name ?? req.user.name;
+      const title = b.title || (b.adhoc ? `Spontanmeeting von ${name}` : 'Kuvert-Anruf');
+      const m = meetings.create(req.user.id, title, { adhoc: b.adhoc });
+      audit.log('meet.meeting_created', { req, details: { meetingId: m.id, title: m.title, adhoc: b.adhoc } });
       return toPublicMeeting(m);
     });
 

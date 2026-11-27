@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDownUp, BellOff, ChevronDown, MessageSquarePlus, MessagesSquare, Phone, Search, Star, Users, UserRound } from 'lucide-react';
+import { ArrowDownUp, BellOff, ChevronDown, MessageSquarePlus, MessagesSquare, Phone, Search, Star, Users, UserRound, Zap } from 'lucide-react';
 import type { ChatCategory, ChatConversation, ChatUser } from '@kuvert/shared';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Button, Dropdown, EmptyState, IconButton, Input, Spinner } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { cn, formatListDate } from '@/lib/utils';
 import { useIsMobile } from '@/lib/useIsMobile';
+import { useFeature } from '@/lib/queries';
+import { startAdhocMeeting } from '@/features/meet/store';
 import {
   conversationTitle,
   replaceConversation,
@@ -130,6 +132,7 @@ export function ConversationList({
 }) {
   const me = useMe();
   const users = useUserMap();
+  const meetEnabled = useFeature('meet');
   const { data: connections } = useConnections();
   /** 'all' | 'kuvert' | Verbindungs-ID */
   const [source, setSource] = useState('all');
@@ -236,6 +239,9 @@ export function ConversationList({
           items={[
             { label: 'Neue Direktnachricht', icon: <UserRound />, onClick: () => onNew('direct') },
             { label: 'Neue Gruppe', icon: <Users />, onClick: () => onNew('group') },
+            ...(meetEnabled
+              ? [{ divider: true, label: '' }, { label: 'Spontanmeeting starten', icon: <Zap />, onClick: () => void startAdhocMeeting({ video: true }) }]
+              : []),
           ]}
         />
         {headerExtra}
