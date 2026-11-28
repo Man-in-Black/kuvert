@@ -7,6 +7,7 @@ import { audit } from '../core/audit.js';
 import { randomId } from '../core/crypto.js';
 import { AppError, BadRequestError } from '../core/errors.js';
 import type { ModuleContext } from '../core/module.js';
+import { placesAvailable } from '../core/places.js';
 import { policies } from '../core/policies.js';
 import { generateRecoveryCodes, generateSecret, otpauthUrl, verifyTotp } from '../core/totp.js';
 import { sessions, toUser, users } from '../core/users.js';
@@ -50,7 +51,7 @@ export async function authRoutes(app: FastifyInstance, ctx: ModuleContext) {
       user,
       modules: ctx.registry.listModules(),
       accountTypes: user ? ctx.registry.listAccountTypes().filter((t) => policies.accountTypeAllowed(t.type)) : [],
-      features: { ...ctx.registry.features(), ...(user && config.google.placesApiKey ? { places: true } : {}) },
+      features: { ...ctx.registry.features(), ...(user && placesAvailable() ? { places: true } : {}) },
       vapidPublicKey: (ctx.kv.get<string>('push', 'vapidPublicKey') ?? config.vapid.publicKey) || null,
       publicUrl: config.publicUrl,
       policies: { require2fa: p.require2fa, usersCanCreateApiTokens: p.usersCanCreateApiTokens },

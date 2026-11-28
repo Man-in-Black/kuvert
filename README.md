@@ -489,6 +489,7 @@ Alle Variablen mit Erklärung: [`.env.example`](.env.example). Die wichtigsten:
 | `MS_CLIENT_ID` / `MS_CLIENT_SECRET` / `MS_TENANT` | Microsoft 365 (Vorgabe, auch im Admin-Bereich einstellbar) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google (Vorgabe, auch im Admin-Bereich einstellbar) |
 | `GOOGLE_PLACES_API_KEY` | Optional: Ortssuche im Termin-Dialog über die Google Places API (New), auch im Admin-Bereich einstellbar |
+| `PLACES_OSM_ENABLED` / `PHOTON_URL` | Ortssuche ohne Google-Schlüssel über OpenStreetMap (Photon, Standard `https://photon.komoot.io`, an), auch im Admin-Bereich einstellbar |
 | `AI_BACKEND` / `AI_BASE_URL` / `AI_MODEL` | KI-Assistent (Vorgabe, auch im Admin-Bereich einstellbar) |
 | `AI_TRIAGE_CONCURRENCY` / `AI_TRIAGE_RETENTION_DAYS` | KI-Triage: gleichzeitige Einordnungen (Standard 1), Aufbewahrung in Tagen (Standard 180) |
 | `KUVERT_MODULES` / `KUVERT_DISABLED_MODULES` | Module ein-/ausschalten (haben Vorrang vor *Admin → Module*) |

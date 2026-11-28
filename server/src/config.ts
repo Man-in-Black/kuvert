@@ -67,6 +67,12 @@ export interface ServiceConfig {
     /** Abgleich-Intervall für neue Nachrichten in Minuten */
     syncIntervalMin: number;
   };
+  /** Ortssuche im Termin-Dialog ohne Google-Schlüssel: OpenStreetMap über einen Photon-Server */
+  places: {
+    osmEnabled: boolean;
+    /** Photon-Instanz, Standard ist der öffentliche Server von komoot (fair use) */
+    photonUrl: string;
+  };
 }
 
 export type ServiceOverrides = { [K in keyof ServiceConfig]?: Partial<ServiceConfig[K]> };
@@ -98,6 +104,10 @@ const envDefaults: ServiceConfig = {
     maxAgeDays: Number(env('SEARCH_MAX_AGE_DAYS', '0')),
     includeTrash: env('SEARCH_INCLUDE_TRASH', 'false') === 'true',
     syncIntervalMin: Number(env('SEARCH_SYNC_INTERVAL', '5')),
+  },
+  places: {
+    osmEnabled: env('PLACES_OSM_ENABLED', 'true') !== 'false',
+    photonUrl: env('PHOTON_URL', 'https://photon.komoot.io').replace(/\/+$/, ''),
   },
 };
 
@@ -156,6 +166,10 @@ export const config = {
   /** Volltext-Suchindex (Meilisearch) – .env-Vorgabe, im Admin-Bereich überschreibbar */
   get search(): ServiceConfig['search'] {
     return merged('search');
+  },
+  /** Ortssuche über OpenStreetMap (Photon) – .env-Vorgabe, im Admin-Bereich überschreibbar */
+  get places(): ServiceConfig['places'] {
+    return merged('places');
   },
   /** Ursprüngliche Werte aus der Umgebung (.env), ohne Admin-Überschreibungen */
   envDefaults,

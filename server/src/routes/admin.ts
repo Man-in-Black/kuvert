@@ -227,6 +227,8 @@ export async function adminRoutes(app: FastifyInstance, ctx: ModuleContext) {
         microsoft: z.record(z.string(), fieldValue).optional(),
         google: z.record(z.string(), fieldValue).optional(),
         ai: z.record(z.string(), fieldValue).optional(),
+        search: z.record(z.string(), fieldValue).optional(),
+        places: z.record(z.string(), fieldValue).optional(),
       }),
       req.body,
     );

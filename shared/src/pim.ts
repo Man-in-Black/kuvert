@@ -90,6 +90,10 @@ export interface PlaceSuggestion {
   secondary?: string;
   /** Unternehmen/Sehenswürdigkeit statt reiner Adresse */
   poi: boolean;
+  /** Herkunft (für die Attribution: „Google Maps“ bzw. „© OpenStreetMap“) */
+  source: 'google' | 'osm';
+  /** Fertiger Text für das Feld „Ort“ (OSM); fehlt er, wird er über placeId aufgelöst (Google) */
+  location?: string;
 }
 
 /** Aufgelöster Ort: fertiger Text für das Feld „Ort“ */

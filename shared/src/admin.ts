@@ -202,7 +202,7 @@ export interface AdminModulesView {
 
 /* ───────────────────────────── Dienste (OAuth-Apps, KI) ───────────────────────────── */
 
-export type ServiceKey = 'microsoft' | 'google' | 'ai' | 'search';
+export type ServiceKey = 'microsoft' | 'google' | 'ai' | 'search' | 'places';
 
 /** Herkunft eines Werts: im Admin-Bereich gesetzt, aus der .env oder Standardwert */
 export type SettingSource = 'admin' | 'env' | 'default';
@@ -226,6 +226,7 @@ export interface ServiceSettingsView {
   google: Record<'clientId' | 'clientSecret' | 'placesApiKey', ServiceFieldState>;
   ai: Record<'enabled' | 'backend' | 'baseUrl' | 'model' | 'apiKey' | 'temperature', ServiceFieldState>;
   search: Record<'enabled' | 'url' | 'apiKey' | 'indexBodies' | 'maxAgeDays' | 'includeTrash' | 'syncIntervalMin', ServiceFieldState>;
+  places: Record<'osmEnabled' | 'photonUrl', ServiceFieldState>;
   publicUrl: string;
   redirectUri: string;
 }

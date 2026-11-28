@@ -61,6 +61,10 @@ export const SERVICE_FIELDS: { [K in ServiceKey]: Record<keyof ServiceConfig[K],
       validate: (v) => (typeof v === 'number' && (v < 1 || v > 1440) ? 'Intervall zwischen 1 und 1440 Minuten' : null),
     },
   },
+  places: {
+    osmEnabled: { type: 'boolean', env: ['PLACES_OSM_ENABLED'] },
+    photonUrl: { type: 'string', env: ['PHOTON_URL'], validate: urlCheck },
+  },
 };
 
 const KEYS = Object.keys(SERVICE_FIELDS) as ServiceKey[];
@@ -129,6 +133,7 @@ export const systemSettings = {
       google: build('google') as ServiceSettingsView['google'],
       ai: build('ai') as ServiceSettingsView['ai'],
       search: build('search') as ServiceSettingsView['search'],
+      places: build('places') as ServiceSettingsView['places'],
       publicUrl: config.publicUrl,
       redirectUri: config.oauthRedirectUri,
     };

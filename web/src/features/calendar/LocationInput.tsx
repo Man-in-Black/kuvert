@@ -16,8 +16,8 @@ const looksLikeLink = (s: string) => /^(https?:\/\/|www\.)/i.test(s.trim());
 export const mapsSearchUrl = (location: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location.trim())}`;
 
 /**
- * Feld „Ort“ mit Ortssuche über Google Places (Unternehmen, Sehenswürdigkeiten, Adressen).
- * Ohne eingerichteten Places-Schlüssel ein normales Textfeld. Freitext bleibt immer möglich.
+ * Feld „Ort“ mit Ortssuche über Google Places oder OpenStreetMap (Unternehmen, Sehenswürdigkeiten,
+ * Adressen). Ist keine Ortssuche eingerichtet, ein normales Textfeld. Freitext bleibt immer möglich.
  */
 export function LocationInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const enabled = useFeature('places');
@@ -45,10 +45,14 @@ export function LocationInput({ value, onChange, placeholder }: { value: string;
   const open = focused && queryOn && typed && (suggestions.length > 0 || !!error);
 
   const pick = async (s: PlaceSuggestion) => {
-    const quick = s.secondary ? `${s.main}, ${s.secondary}` : s.main;
     setTyped(false);
     setActive(0);
-    onChange(quick);
+    // OpenStreetMap liefert den fertigen Text gleich mit
+    if (s.location) {
+      onChange(s.location);
+      return;
+    }
+    onChange(s.secondary ? `${s.main}, ${s.secondary}` : s.main);
     const token = session.current;
     session.current = newSession();
     setResolving(true);
@@ -136,10 +140,19 @@ export function LocationInput({ value, onChange, placeholder }: { value: string;
               );
             })
           )}
-          {/* Attribution laut Google-Maps-Platform-Richtlinie: „Google Maps“, unübersetzt */}
-          <div className="border-t border-border px-3 pt-1 text-right text-xs text-muted" translate="no" style={{ fontFamily: 'Roboto, Arial, sans-serif' }}>
-            Google Maps
-          </div>
+          {suggestions[0]?.source === 'osm' ? (
+            <div className="border-t border-border px-3 pt-1 text-right text-xs text-muted">
+              ©{' '}
+              <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="hover:underline" onMouseDown={(e) => e.preventDefault()}>
+                OpenStreetMap
+              </a>
+            </div>
+          ) : (
+            /* Attribution laut Google-Maps-Platform-Richtlinie: „Google Maps“, unübersetzt */
+            <div className="border-t border-border px-3 pt-1 text-right text-xs text-muted" translate="no" style={{ fontFamily: 'Roboto, Arial, sans-serif' }}>
+              Google Maps
+            </div>
+          )}
         </div>
       )}
     </div>

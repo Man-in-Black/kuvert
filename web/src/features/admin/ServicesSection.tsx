@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Bot, ExternalLink, KeyRound, Link2, RotateCcw, RotateCw, Search, Sparkles, Wifi } from 'lucide-react';
+import { Bot, ExternalLink, KeyRound, Link2, MapPin, RotateCcw, RotateCw, Search, Sparkles, Wifi } from 'lucide-react';
 import type { AiModelInfo, SearchAdminStatus, ServiceFieldState, ServiceKey, ServiceSettingsPatch, ServiceSettingsView } from '@kuvert/shared';
 import { api, errorMessage } from '@/lib/api';
 import { qk, useFeature } from '@/lib/queries';
@@ -28,7 +28,7 @@ const GOOGLE_APIS = 'Gmail API, Google Calendar API, People API, Google Tasks AP
 function initialDraft(view: ServiceSettingsView): Draft {
   const pick = (section: Record<string, ServiceFieldState>) =>
     Object.fromEntries(Object.entries(section).map(([k, f]) => [k, f.secret ? '' : (f.value ?? '')])) as Record<string, Value>;
-  return { microsoft: pick(view.microsoft), google: pick(view.google), ai: pick(view.ai), search: pick(view.search) };
+  return { microsoft: pick(view.microsoft), google: pick(view.google), ai: pick(view.ai), search: pick(view.search), places: pick(view.places) };
 }
 
 export function ServicesSection() {
@@ -49,7 +49,7 @@ export function ServicesSection() {
   const patch = useMemo<ServiceSettingsPatch>(() => {
     if (!view || !draft) return {};
     const out: ServiceSettingsPatch = {};
-    for (const key of ['microsoft', 'google', 'ai', 'search'] as ServiceKey[]) {
+    for (const key of ['microsoft', 'google', 'ai', 'search', 'places'] as ServiceKey[]) {
       const section = view[key] as Record<string, ServiceFieldState>;
       const changes: Record<string, Value | null> = {};
       for (const [field, state] of Object.entries(section)) {
@@ -196,8 +196,8 @@ export function ServicesSection() {
               <a className="text-primary hover:underline" href="https://console.cloud.google.com/apis/library/places.googleapis.com" target="_blank" rel="noreferrer">
                 Places API (New)
               </a>{' '}
-              aktivieren und unter „Anmeldedaten“ einen API-Schlüssel anlegen – am besten auf die Places API beschränkt. Abrechnung über das Google-Cloud-Konto; Nutzer
-              sehen die Suche nach dem nächsten Neuladen.
+              aktivieren und unter „Anmeldedaten“ einen API-Schlüssel anlegen – am besten auf die Places API beschränkt und ohne Website-Einschränkung (die
+              Anfragen kommen vom Server). Abrechnung über das Google-Cloud-Konto. Ohne Schlüssel sucht Kuvert in OpenStreetMap (siehe „Ortssuche“).
             </>
           }
         />
@@ -225,6 +225,9 @@ export function ServicesSection() {
 
       {/* ───────────── Suchindex ───────────── */}
       <SearchCard draft={draft.search} field={(n) => field('search', n)} saved={view.search} />
+
+      {/* ───────────── Ortssuche ───────────── */}
+      <PlacesCard draft={draft.places} field={(n) => field('places', n)} googleKey={view.google.placesApiKey.isSet} />
     </div>
   );
 }
@@ -518,6 +521,43 @@ function SearchCard({ draft, field, saved }: { draft: Record<string, Value>; fie
         </div>
       )}
       {confirmRebuild.dialog}
+    </Card>
+  );
+}
+
+/* ═════════════════════════════ Ortssuche (Termine) ═════════════════════════════ */
+
+function PlacesCard({ draft, field, googleKey }: { draft: Record<string, Value>; field: (name: string) => FieldProps; googleKey: boolean }) {
+  const osm = field('osmEnabled');
+  const active = googleKey ? 'Google' : draft.osmEnabled ? 'OpenStreetMap' : null;
+  return (
+    <Card
+      icon={<MapPin />}
+      title="Ortssuche (Termine)"
+      description="Vorschläge im Feld „Ort“ beim Anlegen und Bearbeiten von Terminen: Firmen, Restaurants, Sehenswürdigkeiten und Adressen."
+      actions={active ? <Badge tone="success">{active}</Badge> : <Badge>Aus</Badge>}
+    >
+      <SettingRow
+        label={<Label text="OpenStreetMap verwenden" {...osm} />}
+        hint="Kostenlos und ohne Schlüssel, greift nur, wenn bei Google kein Places-API-Schlüssel hinterlegt ist. Die Eingaben gehen dabei an den Photon-Server."
+      >
+        <Switch checked={!!draft.osmEnabled} onChange={(v) => osm.onChange(v)} />
+      </SettingRow>
+      <FieldRow
+        label="Photon-Server"
+        {...field('photonUrl')}
+        placeholder="https://photon.komoot.io"
+        hint={
+          <>
+            Standard ist der öffentliche Server von komoot (Fair Use, für einzelne Nutzer ausreichend). Für viele Nutzer oder ohne Datenweitergabe an Dritte eine{' '}
+            <a className="text-primary hover:underline" href="https://github.com/komoot/photon" target="_blank" rel="noreferrer">
+              eigene Photon-Instanz
+            </a>{' '}
+            betreiben und hier eintragen.
+          </>
+        }
+      />
+      {googleKey && <p className="pt-2 text-xs text-muted">Ein Google-Places-API-Schlüssel ist hinterlegt – die Ortssuche nutzt Google, OpenStreetMap ist nur Ersatz.</p>}
     </Card>
   );
 }
