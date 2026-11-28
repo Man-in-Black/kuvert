@@ -20,7 +20,7 @@ import { users } from '../../core/users.js';
 import { requireAdmin } from '../../routes/admin.js';
 import { parse } from '../../routes/util.js';
 import { isExternalId } from '../chat/bridges/common.js';
-import { meetCalls, type CallJoin } from './calls.js';
+import { meetCalls, memberIdentity, newDeviceId, type CallJoin } from './calls.js';
 import { meetConfig, normalizeUrl, toHttp } from './config.js';
 import { createToken, installProxy, livekit, PROXY_PREFIX, proxyHttp, type PublishSource } from './livekit.js';
 import { meetings, migrations, toPublicMeeting } from './meetings.js';
@@ -95,12 +95,13 @@ function joinResult(
 
 function memberJoin(req: FastifyRequest, j: CallJoin): MeetJoinResult {
   const user = users.get(req.user.id);
+  const device = newDeviceId();
   return joinResult(req, j, {
-    identity: req.user.id,
+    identity: memberIdentity(req.user.id, device),
     name: user?.name ?? req.user.name,
     avatarUrl: user?.avatarUrl ?? null,
     guest: false,
-    leavePath: `/meet/c/${j.callId}/leave`,
+    leavePath: `/meet/c/${j.callId}/leave?device=${device}`,
   });
 }
 
@@ -177,8 +178,9 @@ export default defineModule({
       return memberJoin(req, meetCalls.joinById(req.params.callId, req.user.id));
     });
 
-    app.post<CallParams>('/c/:callId/leave', async (req) => {
-      meetCalls.leave(req.params.callId, req.user.id);
+    app.post<CallParams & { Querystring: { device?: string } }>('/c/:callId/leave', async (req) => {
+      const { device } = parse(z.object({ device: z.string().regex(/^[0-9a-f]{12}$/).optional() }), req.query);
+      await meetCalls.leave(req.params.callId, req.user.id, device);
       return { ok: true };
     });
 

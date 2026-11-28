@@ -14,7 +14,7 @@
  *    Teilnehmern, „Verpasst“ für Mitglieder, die nicht dabei waren. Direktanrufe enden nach 45 s ohne
  *    Antwort oder bei Ablehnung.
  */
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { ChatCall, ChatCallInfo, ChatRing, ChatSystemEvent, MeetCallState, MeetLinkInfo, ServerEvent } from '@kuvert/shared';
 import { AppError, BadRequestError } from '../../core/errors.js';
 import type { ModuleContext } from '../../core/module.js';
@@ -40,6 +40,16 @@ const LOBBY_MAX_PER_CALL = 20;
 const LOBBY_MAX_TOTAL = 500;
 
 const isGuest = (identity: string) => identity.startsWith(GUEST_PREFIX);
+
+/**
+ * LiveKit-Identität eines Kuvert-Benutzers: Benutzer-ID plus Gerätekennung. LiveKit wirft bei
+ * doppelter Identität die ältere Verbindung hinaus – so kann man mit Laptop und Handy zugleich drin sein.
+ */
+const DEVICE_SEP = '#';
+export const memberIdentity = (userId: string, device: string) => `${userId}${DEVICE_SEP}${device}`;
+export const newDeviceId = () => randomBytes(6).toString('hex');
+/** Benutzer-ID aus der Identität (ältere Beitritte ohne Gerätekennung bleiben, wie sie sind) */
+const userOfIdentity = (identity: string) => identity.split(DEVICE_SEP)[0]!;
 
 interface GuestInfo {
   name: string;
@@ -382,7 +392,7 @@ async function poll() {
     const t = Date.now();
 
     // Kuvert-Benutzer
-    const next = new Set(present.filter((id) => !isGuest(id)));
+    const next = new Set(present.filter((id) => !isGuest(id)).map(userOfIdentity));
     for (const [userId, at] of c.pending) {
       if (next.has(userId)) c.pending.delete(userId);
       else if (t - at < JOIN_GRACE_MS) next.add(userId);
@@ -547,10 +557,22 @@ export const meetCalls = {
     return joinInfo(c, userId);
   },
 
-  leave(callId: string, userId: string) {
+  async leave(callId: string, userId: string, device?: string) {
     const c = byId.get(callId);
     if (!c) return;
     c.pending.delete(userId);
+    if (!c.participants.has(userId)) return;
+    if (device) {
+      // Mit einem weiteren Gerät noch im Anruf? Dann bleibt man Teilnehmer, der Anruf läuft weiter
+      const own = memberIdentity(userId, device);
+      try {
+        const present = await livekit.participants(c.room);
+        if (byId.get(callId) !== c) return;
+        if (present.some((id) => id !== own && !isGuest(id) && userOfIdentity(id) === userId)) return;
+      } catch {
+        /* LiveKit nicht erreichbar: wie bisher austragen */
+      }
+    }
     if (!c.participants.delete(userId)) return;
     if (!c.participants.size) void end(c, 'empty');
     else broadcast(c);
@@ -567,7 +589,7 @@ export const meetCalls = {
   /** Austritt über die Unterhaltung (ältere Clients) */
   leaveConversation(conversationId: string, userId: string) {
     const c = calls.get(convKey(conversationId));
-    if (c) this.leave(c.id, userId);
+    if (c) void this.leave(c.id, userId);
   },
 
   /** Klingeln ablehnen; ein Direktanruf endet damit */

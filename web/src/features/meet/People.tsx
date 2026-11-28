@@ -83,7 +83,8 @@ export function PeoplePanel({ call, state }: { call: ActiveCall; state: MeetCall
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
 
-  const inCall = new Set(participants.map((p) => p.identity));
+  // Identität = Benutzer-ID#Gerät (mehrere Geräte je Benutzer möglich)
+  const inCall = new Set(participants.map((p) => p.identity.split('#')[0]!));
   const invited = new Set(state?.invitedIds ?? []);
   const candidates = useMemo(() => {
     const q = query.trim().toLowerCase();

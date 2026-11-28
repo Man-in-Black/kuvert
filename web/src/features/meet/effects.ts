@@ -359,9 +359,9 @@ export function backgroundUrl(id: string): string {
 
 const ASSETS = { tasksVisionFileSet: '/mediapipe/wasm', modelAssetPath: '/mediapipe/selfie_segmenter.tflite' };
 
-type ProcessorModule = typeof import('@livekit/track-processors');
+type ProcessorModule = typeof import('./segmentation');
 let modulePromise: Promise<ProcessorModule> | null = null;
-const loadModule = () => (modulePromise ??= import('@livekit/track-processors'));
+const loadModule = () => (modulePromise ??= import('./segmentation'));
 
 function cameraTrack(room: Room): LocalVideoTrack | undefined {
   return room.localParticipant.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
@@ -403,5 +403,6 @@ export async function ensureEffect(room: Room, id: EffectId = savedEffect()): Pr
     await current.switchTo(opts);
     return;
   }
-  await track.setProcessor(mod.BackgroundProcessor({ ...opts, assetPaths: ASSETS }));
+  const { mode: _mode, ...rest } = opts;
+  await track.setProcessor(mod.SmoothBackgroundProcessor({ ...rest, assetPaths: ASSETS }));
 }
