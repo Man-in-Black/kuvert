@@ -62,7 +62,7 @@ export const paperlessAdminModule: WebModule = {
 const mod: WebModule = {
   id: 'paperless',
   feature: 'paperless',
-  nav: [{ path: 'paperless', label: 'Paperless', icon: Leaf, order: 46 }],
+  nav: [{ path: 'paperless', label: 'Paperless', icon: Leaf, order: 45.5 }],
   routes: [{ path: 'paperless/*', element: <PaperlessRoute /> }],
   settings: [{ id: 'paperless', label: 'Paperless', icon: Leaf, order: 66, component: PaperlessSettings }],
   composerAttachSources: [{ id: 'paperless', label: 'Aus Paperless …', icon: <Leaf />, dialog: PaperlessPickerDialog }],

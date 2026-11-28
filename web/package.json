@@ -1,6 +1,6 @@
 {
   "name": "@kuvert/web",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,7 +18,7 @@
     "@fullcalendar/list": "^6.1.22",
     "@fullcalendar/react": "^6.1.22",
     "@fullcalendar/timegrid": "^6.1.22",
-    "@kuvert/shared": "1.4.2",
+    "@kuvert/shared": "1.4.3",
     "@livekit/components-react": "^2.9.26",
     "@livekit/components-styles": "^1.2.0",
     "@livekit/track-processors": "^0.8.3",
