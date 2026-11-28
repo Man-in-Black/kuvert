@@ -95,6 +95,7 @@ Anbindung an [Paperless-ngx](https://docs.paperless-ngx.com) über dessen REST-A
 |---|---|
 | **Editor** (*Anhängen → Aus Paperless …*) | Dokumente per Volltext sowie nach Korrespondent, Dokumenttyp und Tag suchen (mit Vorschaubild und Trefferausschnitt, Vorschau als PDF im neuen Tab); **anhängen** als durchsuchbares Archiv-PDF oder im Original, oder einen **Freigabelink** (7/30/90 Tage oder unbegrenzt) einfügen |
 | **Nachrichtenansicht** (Blatt-Symbol am Anhang) | Anhang **an Paperless übergeben** – Titel, Korrespondent, Dokumenttyp und Tags optional; ohne Angaben ordnet Paperless über seine Zuordnungsregeln selbst zu. Kuvert verfolgt die Verarbeitung und meldet Erfolg (mit „Öffnen“) oder den Grund des Scheiterns, z. B. ein Duplikat |
+| **Bereich „Paperless“** (Menü links) | Dokumente durchsuchen und filtern (Korrespondent, Dokumenttyp, Tag, Sortierung), ansehen (PDF-Vorschau, erkannter Text, Metadaten), herunterladen (Archiv-PDF oder Original), **per Mail senden** – als Anhang oder Freigabelink (7/30 Tage, unbegrenzt) – und in Paperless öffnen. Deep-Link: `/paperless?q=Rechnung&id=42` |
 | **Einstellungen → Paperless** | Eigener API-Token, Übersicht (Dokumente, Posteingang, Tags) |
 
 ### Einrichtung

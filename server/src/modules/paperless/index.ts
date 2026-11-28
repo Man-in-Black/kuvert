@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type {
   PaperlessAdminConfig,
   PaperlessDocument,
+  PaperlessDocumentDetail,
   PaperlessMeta,
   PaperlessNamed,
   PaperlessSearchResult,
@@ -46,6 +47,9 @@ interface RawDoc {
   archived_file_name?: string | null;
   mime_type?: string | null;
   page_count?: number | null;
+  content?: string | null;
+  archive_serial_number?: number | null;
+  notes?: unknown[] | number | null;
   __search_hit__?: { highlights?: string | null } | null;
 }
 
@@ -123,8 +127,11 @@ function fallbackName(id: string, original: boolean) {
   return original ? `dokument-${id}` : `dokument-${id}.pdf`;
 }
 
+const ORDERING = { 'created-desc': '-created', 'created-asc': 'created', 'added-desc': '-added', 'title-asc': 'title' } as const;
+
 const searchSchema = z.object({
   q: z.string().max(500).optional(),
+  sort: z.enum(['created-desc', 'created-asc', 'added-desc', 'title-asc']).optional(),
   correspondent: z.coerce.number().int().positive().optional(),
   documentType: z.coerce.number().int().positive().optional(),
   tag: z.coerce.number().int().positive().optional(),
@@ -241,7 +248,7 @@ export default defineModule({
       const r = await credentials.client(req.user.id).json<{ count: number; results: RawDoc[] }>('documents/', {
         // Volltextsuche (Inhalt, Titel, Korrespondent …); ohne Suchtext neueste zuerst
         query: text || undefined,
-        ordering: text ? undefined : '-created',
+        ordering: q.sort ? ORDERING[q.sort] : text ? undefined : '-created',
         correspondent__id: q.correspondent,
         document_type__id: q.documentType,
         tags__id__all: q.tag,
@@ -250,6 +257,25 @@ export default defineModule({
         page_size: q.pageSize,
       });
       return { count: r.count, page: q.page, pageSize: q.pageSize, results: r.results.map(mapDoc) };
+    });
+
+    app.get<IdParams>('/documents/:id', async (req): Promise<PaperlessDocumentDetail> => {
+      const d = await credentials.client(req.user.id).json<RawDoc>(`documents/${numericId(req.params.id)}/`);
+      const content = d.content?.trim() || null;
+      return {
+        ...mapDoc(d),
+        content: content && content.length > 20_000 ? `${content.slice(0, 20_000)} …` : content,
+        archiveSerialNumber: d.archive_serial_number ?? null,
+        notes: Array.isArray(d.notes) ? d.notes.length : typeof d.notes === 'number' ? d.notes : 0,
+      };
+    });
+
+    /** Herunterladen: Archiv-PDF (Standard) oder Original */
+    app.get<IdParams & { Querystring: { original?: string } }>('/documents/:id/download', async (req, reply) => {
+      const id = numericId(req.params.id);
+      const original = req.query.original === '1';
+      const file = await credentials.client(req.user.id).binary(`documents/${id}/download/`, original ? { original: 'true' } : undefined);
+      return sendFile(reply, { filename: file.filename ?? fallbackName(id, original), contentType: file.contentType, data: file.data });
     });
 
     app.get<IdParams>('/documents/:id/thumb', async (req, reply) => {

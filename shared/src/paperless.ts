@@ -61,8 +61,20 @@ export interface PaperlessDocument {
   snippet: string | null;
 }
 
+/** Einzelnes Dokument mit Inhalt (Detailansicht) */
+export interface PaperlessDocumentDetail extends PaperlessDocument {
+  /** Erkannter Text (gekürzt) */
+  content: string | null;
+  archiveSerialNumber: number | null;
+  notes: number;
+}
+
+export type PaperlessSort = 'created-desc' | 'created-asc' | 'added-desc' | 'title-asc';
+
 export interface PaperlessSearchQuery {
   q?: string;
+  /** Ohne Angabe: mit Suchtext nach Relevanz, sonst neueste zuerst */
+  sort?: PaperlessSort;
   correspondent?: number;
   documentType?: number;
   tag?: number;
